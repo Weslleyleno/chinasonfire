@@ -932,6 +932,21 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // Configuração do Supabase
+        const SUPABASE_URL = 'https://olphpynltrofyfhpsbht.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9scGhweW5sdHJvZnlmaHBzYmh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYxMzg5MzEsImV4cCI6MjA4MTcxNDkzMX0.VxAhg8B5JsQ2EuhU_o_LS72DZwTDA415_ntvZQYuVMo';
+        
+        // Criar cliente Supabase
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        window.supabaseClient = supabase;
+        
+        console.log('✅ Supabase conectado!');
+    </script>
+    
     <script src="script.js"></script>
 </body>
 </html>
