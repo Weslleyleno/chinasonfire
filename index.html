@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CHINAS ON FIRE</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-container">
+            <div class="login-card">
+                <div class="login-header">
+                    <h1>CHINAS ON FIRE</h1>
+                    <p>Faça login para continuar</p>
+                </div>
+                <div class="login-form" id="loginForm">
+                    <div class="form-group">
+                        <label>Nome de Usuário</label>
+                        <input type="text" id="loginUsername" placeholder="Digite seu nome de usuário" autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label>Senha</label>
+                        <div style="position: relative;">
+                            <input type="password" id="loginPassword" placeholder="Digite sua senha" autocomplete="current-password" style="padding-right: 45px;">
+                            <button type="button" id="togglePassword" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 18px; padding: 5px;">
+                                <i class="fas fa-eye" id="passwordIcon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px; margin-top: -10px;">
+                        <input type="checkbox" id="rememberMe" style="width: auto; margin: 0;">
+                        <label for="rememberMe" style="margin: 0; font-size: 0.9rem; cursor: pointer;">Lembrar-me</label>
+                    </div>
+                    <button class="btn-primary" id="loginBtn">Entrar</button>
+                    <p id="loginError" style="color: #ef4444; text-align: center; margin-top: 15px; display: none;">Usuário ou senha incorretos!</p>
+                </div>
+                
+                <!-- Formulário de Cadastro (aparece quando ativado pelo admin) -->
+                <div class="login-form" id="registerForm" style="display: none;">
+                    <div class="form-group">
+                        <label>Nome de Usuário</label>
+                        <input type="text" id="registerUsername" placeholder="Digite seu nome de usuário" autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label>Senha</label>
+                        <div style="position: relative;">
+                            <input type="password" id="registerPassword" placeholder="Digite sua senha" style="padding-right: 45px;">
+                            <button type="button" id="toggleRegisterPassword" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 18px; padding: 5px;">
+                                <i class="fas fa-eye" id="registerPasswordIcon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Confirmar Senha</label>
+                        <input type="password" id="registerPasswordConfirm" placeholder="Confirme sua senha">
+                    </div>
+                    <button class="btn-primary" id="registerBtn">Criar Conta</button>
+                    <p id="registerError" style="color: #ef4444; text-align: center; margin-top: 15px; display: none;"></p>
+                    <p style="text-align: center; margin-top: 15px;">
+                        <a href="#" id="backToLogin" style="color: var(--purple-primary); text-decoration: none; font-size: 0.9rem;">Voltar para login</a>
+                    </p>
+                </div>
+                
+                <!-- Link para cadastro (aparece quando ativado pelo admin) -->
+                <div id="registerLinkContainer" style="display: none; text-align: center; margin-top: 20px;">
+                    <p style="color: var(--text-secondary); font-size: 0.9rem;">
+                        Não tem uma conta? 
+                        <a href="#" id="showRegisterForm" style="color: var(--purple-primary); text-decoration: none; font-weight: 600;">Cadastre-se aqui</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-container" id="dashboardContainer" style="display: none;">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <!-- Brand Section -->
+            <div class="brand-card">
+                <div class="brand-info">
+                    <h2>CHINAS ON FIRE</h2>
+                </div>
+            </div>
+
+            <!-- User Profile Section -->
+            <div class="user-card">
+            <div class="user-icon" id="sidebarUserAvatar">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="16" cy="16" r="14" fill="#8b5cf6" opacity="0.2"/>
+                    <path d="M16 8C12 8 9 11 9 15C9 17 10 18.5 11 19.5L11 22C11 22.5 11.5 23 12 23H20C20.5 23 21 22.5 21 22V19.5C22 18.5 23 17 23 15C23 11 20 8 16 8Z" fill="#a0aec0"/>
+                    <circle cx="13" cy="14" r="1.5" fill="#8b5cf6"/>
+                    <circle cx="19" cy="14" r="1.5" fill="#8b5cf6"/>
+                    <path d="M13 17C13 17 14.5 18.5 16 18.5C17.5 18.5 19 17 19 17" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </div>
+                <div class="user-info">
+                    <h3 id="sidebarUsername">weslleyleno60</h3>
+                </div>
+            </div>
+
+            <!-- Navigation Menu -->
+            <nav class="sidebar-nav">
+                <ul>
+                    <li class="active" data-section="dashboard">
+                        <div class="nav-icon">
+                            <i class="fas fa-chart-bar"></i>
+                        </div>
+                        <div class="nav-text">
+                            <span class="nav-title">Dashboard</span>
+                            <span class="nav-subtitle">Visão geral</span>
+                        </div>
+                    </li>
+                    <li data-section="controle-diario">
+                        <div class="nav-icon">
+                            <i class="fas fa-calendar-alt"></i>
+                        </div>
+                        <div class="nav-text">
+                            <span class="nav-title">Controle Diário</span>
+                            <span class="nav-subtitle">Registros diários</span>
+                        </div>
+                    </li>
+                    <li data-section="ranking">
+                        <div class="nav-icon">
+                            <i class="fas fa-trophy"></i>
+                        </div>
+                        <div class="nav-text">
+                            <span class="nav-title">Ranking</span>
+                            <span class="nav-subtitle">Classificação geral</span>
+                        </div>
+                    </li>
+                    <li data-section="plataformas">
+                        <div class="nav-icon">
+                            <i class="fas fa-desktop"></i>
+                        </div>
+                        <div class="nav-text">
+                            <span class="nav-title">Plataformas</span>
+                            <span class="nav-subtitle">Status das plataformas</span>
+                        </div>
+                    </li>
+                    <li data-section="proxy">
+                        <div class="nav-icon">
+                            <i class="fas fa-server"></i>
+                        </div>
+                        <div class="nav-text">
+                            <span class="nav-title">Proxy</span>
+                            <span class="nav-subtitle">Gerenciar proxies</span>
+                        </div>
+                    </li>
+                    <li data-section="chaves-pix">
+                        <div class="nav-icon">
+                            <i class="fas fa-key"></i>
+                        </div>
+                        <div class="nav-text">
+                            <span class="nav-title">Chaves PIX</span>
+                            <span class="nav-subtitle">Chaves de pagamento</span>
+                        </div>
+                    </li>
+                    <li data-section="gastos" id="gastosNavItem" style="display: none;">
+                        <div class="nav-icon">
+                            <i class="fas fa-money-bill-wave"></i>
+                        </div>
+                        <div class="nav-text">
+                            <span class="nav-title">Gastos</span>
+                            <span class="nav-subtitle">Despesas adicionais</span>
+                        </div>
+                    </li>
+                    <li data-section="contas">
+                        <div class="nav-icon">
+                            <i class="fas fa-wallet"></i>
+                        </div>
+                        <div class="nav-text">
+                            <span class="nav-title">Contas</span>
+                            <span class="nav-subtitle">Em desenvolvimento</span>
+                        </div>
+                    </li>
+                    <li data-section="admin" id="adminNavItem" style="display: none;">
+                        <div class="nav-icon">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <div class="nav-text">
+                            <span class="nav-title">Admin</span>
+                            <span class="nav-subtitle">Gerenciar usuários</span>
+                        </div>
+                    </li>
+                    <li data-section="perfil">
+                        <div class="nav-icon">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div class="nav-text">
+                            <span class="nav-title">Perfil</span>
+                            <span class="nav-subtitle">Configurações</span>
+                        </div>
+                    </li>
+                </ul>
+            </nav>
+            
+            <!-- Toggle Sidebar Button -->
+            <button id="toggleSidebarBtn" class="toggle-sidebar-btn" title="Esconder/Mostrar Menu">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <button class="menu-toggle" id="menuToggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </header>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                <!-- Dashboard Section -->
+                <section id="dashboard" class="content-section active">
+                    <div class="welcome-section">
+                        <h1 id="greetingMessage">Boa noite, weslleyleno60! 👋</h1>
+                        <p>Aqui está seu resumo executivo de hoje</p>
+                    </div>
+
+                    <!-- Summary Cards -->
+                    <div class="summary-cards">
+                        <div class="summary-card profit">
+                            <div class="card-icon">🚀</div>
+                            <div class="card-content">
+                                <h3>LUCRO TOTAL</h3>
+                                <h2 id="totalProfitCard">R$ 0,00</h2>
+                                <p id="totalDaysCard">0 dias registrados</p>
+                            </div>
+                        </div>
+                        <div class="summary-card invested">
+                            <div class="card-icon">💎</div>
+                            <div class="card-content">
+                                <h3>INVESTIDO</h3>
+                                <h2 id="totalInvestedCard">R$ 0,00</h2>
+                                <p>Depósitos + Despesas</p>
+                            </div>
+                        </div>
+                        <div class="summary-card roi">
+                            <div class="card-icon">📊</div>
+                            <div class="card-content">
+                                <h3>ROI</h3>
+                                <h2 id="roiCard">0.0%</h2>
+                                <p>Retorno sobre investimento</p>
+                            </div>
+                        </div>
+                        <div class="summary-card average">
+                            <div class="card-icon">⚡</div>
+                            <div class="card-content">
+                                <h3>MÉDIA/DIA</h3>
+                                <h2 id="averageDayCard">R$ 0,00</h2>
+                                <p>Lucro médio diário</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Best Day -->
+                    <div class="best-day" id="bestDayCard" style="display: none;">
+                        <i class="fas fa-trophy"></i>
+                        <span class="best-day-label">Melhor dia registrado</span>
+                        <span class="best-day-value" id="bestDayValue">-</span>
+                    </div>
+
+                    <!-- Balance Evolution -->
+                    <div class="evolution-section">
+                        <div class="evolution-header">
+                            <div class="evolution-title">
+                                <i class="fas fa-chart-line"></i>
+                                <h3>Evolução do Saldo</h3>
+                            </div>
+                            <p>Acompanhe o acumulado de lucro e o comportamento diário</p>
+                            <div class="evolution-tabs">
+                                <button class="tab-btn" data-period="total">Saldo Total</button>
+                                <button class="tab-btn active" data-period="month">Saldo do Mês</button>
+                                <button class="tab-btn" data-period="day">Saldo do Dia</button>
+                            </div>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="balanceChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Controle Diário Section -->
+                <section id="controle-diario" class="content-section">
+                    <div class="page-header">
+                        <h1>Controle Diário</h1>
+                        <p>Gerencie suas operações diárias — salvamento automático em 1 segundo</p>
+                    </div>
+
+                    <!-- Accounts Section -->
+                    <div class="control-card">
+                        <div class="card-header-section">
+                            <h3>Contas do dia</h3>
+                            <p>Cadastre novas contas e gerencie as existentes pelo modal dedicado</p>
+                        </div>
+                        <div class="accounts-controls">
+                            <div class="daily-profit">
+                                <label>Lucro diário:</label>
+                                <span class="profit-value">R$ 0,00</span>
+                            </div>
+                            <div class="account-buttons">
+                                <button class="btn-primary" id="viewAccounts">Ver contas</button>
+                                <button class="btn-primary" id="addAccount">Adicionar conta</button>
+                                <button class="btn-primary" id="calculatorBtn">Calculadora</button>
+                            </div>
+                        </div>
+                        <div class="accounts-stats">
+                            <div class="stat-mini">
+                                <span class="stat-label">Total de contas</span>
+                                <span class="stat-value">0</span>
+                            </div>
+                            <div class="stat-mini">
+                                <span class="stat-label">Depósitos</span>
+                                <span class="stat-value">R$ 0,00</span>
+                            </div>
+                            <div class="stat-mini">
+                                <span class="stat-label">Re-depósitos</span>
+                                <span class="stat-value">R$ 0,00</span>
+                            </div>
+                            <div class="stat-mini">
+                                <span class="stat-label">Saques</span>
+                                <span class="stat-value">R$ 0,00</span>
+                            </div>
+                            <div class="stat-mini">
+                                <span class="stat-label">Baú</span>
+                                <span class="stat-value">R$ 0,00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Operational Expenses -->
+                    <div class="control-card">
+                        <div class="card-header-section">
+                            <h3>Despesas Operacionais</h3>
+                            <p>Valores que entram no cálculo do total investido</p>
+                        </div>
+                        <div class="expenses-controls">
+                            <div class="expense-field">
+                                <label>Gastos com Proxy (R$)</label>
+                                <input type="number" id="proxyExpenseInput" value="0.00" step="0.01" placeholder="0.00">
+                            </div>
+                            <div class="expense-field">
+                                <label>Gastos com Números (R$)</label>
+                                <input type="number" id="numbersExpenseInput" value="0.00" step="0.01" placeholder="0.00">
+                            </div>
+                            <div class="expense-total">
+                                <span>Total: R$ 0,00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Daily Evolution -->
+                    <div class="control-card">
+                        <div class="card-header-section">
+                            <h3>Evolução ao Longo do Dia</h3>
+                            <p>Visualização do lucro acumulado por hora</p>
+                        </div>
+                        <div class="chart-container" id="dailyEvolutionChart" style="height: 300px;">
+                            <canvas id="dailyChart"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Ranking Section -->
+                <section id="ranking" class="content-section">
+                    <div class="page-header">
+                        <h1>Ranking</h1>
+                    </div>
+
+                    <!-- Monthly Goal Card -->
+                    <div class="goal-card">
+                        <div class="goal-header">
+                            <h3>Meta do mês</h3>
+                        </div>
+                        <div class="goal-progress">
+                            <div class="progress-bar-container">
+                                <div class="progress-bar" id="goalProgressBar" style="width: 0%"></div>
+                            </div>
+                            <div class="progress-text" id="goalProgressText">0.0%</div>
+                        </div>
+                        <div class="goal-details">
+                            <div class="goal-item">
+                                <span class="goal-label">Meta Mensal</span>
+                                <span class="goal-value" id="goalTarget">R$ 0,00</span>
+                            </div>
+                            <div class="goal-item">
+                                <span class="goal-label">Alcançado</span>
+                                <span class="goal-value success" id="goalAchieved">R$ 0,00</span>
+                            </div>
+                            <div class="goal-item">
+                                <span class="goal-label">Restante</span>
+                                <span class="goal-value" id="goalRemaining">R$ 0,00</span>
+                            </div>
+                        </div>
+                        <div class="goal-details" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                            <div class="goal-item">
+                                <span class="goal-label">Meta Diária</span>
+                                <span class="goal-value" id="goalDailyTarget">R$ 0,00</span>
+                            </div>
+                            <div class="goal-item">
+                                <span class="goal-label">Alcançado Hoje</span>
+                                <span class="goal-value success" id="goalDailyAchieved">R$ 0,00</span>
+                            </div>
+                            <div class="goal-item">
+                                <span class="goal-label">Restante Hoje</span>
+                                <span class="goal-value" id="goalDailyRemaining">R$ 0,00</span>
+                            </div>
+                        </div>
+                        <button class="btn-primary goal-btn" id="setGoalBtn">Definir meta mensal</button>
+                    </div>
+
+                    <!-- Ranking Table -->
+                    <div class="ranking-table-card">
+                        <div class="table-header">
+                            <div class="table-filters">
+                                <select class="filter-select" id="filterYear">
+                                    <option value="">Todos os anos</option>
+                                </select>
+                                <select class="filter-select" id="filterMonth">
+                                    <option value="">Todos os meses</option>
+                                    <option value="0">Janeiro</option>
+                                    <option value="1">Fevereiro</option>
+                                    <option value="2">Março</option>
+                                    <option value="3">Abril</option>
+                                    <option value="4">Maio</option>
+                                    <option value="5">Junho</option>
+                                    <option value="6">Julho</option>
+                                    <option value="7">Agosto</option>
+                                    <option value="8">Setembro</option>
+                                    <option value="9">Outubro</option>
+                                    <option value="10">Novembro</option>
+                                    <option value="11">Dezembro</option>
+                                </select>
+                                <select class="filter-select" id="filterDay">
+                                    <option value="">Todos os dias</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="ranking-list" id="rankingList">
+                            <div class="ranking-empty" style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+                                <p>Nenhum dado de ranking disponível ainda.</p>
+                                <p style="font-size: 0.9rem; margin-top: 0.5rem;">Adicione contas para ver seu ranking.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Next Ranking Info -->
+                    <div class="ranking-next-card" id="nextRankingCard" style="display: none;">
+                        <div class="next-ranking-header">
+                            <i class="fas fa-trophy"></i>
+                            <h3>Próximo no Ranking</h3>
+                        </div>
+                        <div class="next-ranking-content">
+                            <div class="next-ranking-info">
+                                <span class="next-ranking-label">Falta para passar o próximo:</span>
+                                <span class="next-ranking-value" id="nextRankingAmount">R$ 0,00</span>
+                            </div>
+                            <div class="next-ranking-progress">
+                                <div class="progress-bar-container">
+                                    <div class="progress-bar" id="nextRankingProgressBar" style="width: 0%"></div>
+                                </div>
+                                <span class="progress-text" id="nextRankingProgressText">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Plataformas Section -->
+                <section id="plataformas" class="content-section">
+                    <div class="page-header">
+                        <h1>Plataformas</h1>
+                        <p>Gerenciar plataformas que estão passando (compartilhado globalmente)</p>
+                    </div>
+                    
+                    <div class="control-card">
+                        <div class="card-header-section">
+                            <h3>Plataformas Disponíveis</h3>
+                            <p>Adicione e gerencie plataformas que estão funcionando</p>
+                        </div>
+                        
+                        <div class="profile-form">
+                            <div class="form-group">
+                                <label>Nome da Plataforma</label>
+                                <input type="text" id="platformName" placeholder="Ex: Binance, Coinbase, etc." value="">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Status</label>
+                                <select id="platformStatus">
+                                    <option value="passando">Passando</option>
+                                    <option value="instavel">Instável</option>
+                                    <option value="indisponivel">Indisponível</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Descrição (Opcional)</label>
+                                <textarea id="platformDescription" placeholder="Adicione uma descrição sobre a plataforma..." rows="3"></textarea>
+                            </div>
+                            
+                            <button class="btn-primary" id="addPlatformBtn">Adicionar Plataforma</button>
+                            
+                            <div class="platforms-list" id="platformsList" style="margin-top: 20px;">
+                                <!-- Lista de plataformas será gerada via JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Proxy Section -->
+                <section id="proxy" class="content-section">
+                    <div class="page-header">
+                        <h1>Proxy</h1>
+                        <p>Gerenciar configurações de proxy</p>
+                    </div>
+                    
+                    <div class="control-card">
+                        <div class="card-header-section">
+                            <h3>Configurações de Proxy</h3>
+                            <p>Adicione e gerencie seus proxies</p>
+                        </div>
+                        
+                        <div class="profile-form">
+                            <div class="form-group">
+                                <label>Nome</label>
+                                <input type="text" id="proxyName" placeholder="Ex: Proxy Principal, Proxy Backup, etc." value="">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Adicionar Proxy (um por linha para adicionar em massa)</label>
+                                <textarea id="proxyInput" placeholder="Ex: 192.168.1.1:8080&#10;192.168.1.2:8080&#10;192.168.1.3:8080" rows="5"></textarea>
+                            </div>
+                            
+                            <button class="btn-primary" id="addProxyBtn">Adicionar Proxy(s)</button>
+                            
+                            <div class="proxy-list" id="proxyList" style="margin-top: 20px;">
+                                <!-- Lista de proxies será gerada via JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Chaves PIX Section -->
+                <section id="chaves-pix" class="content-section">
+                    <div class="page-header">
+                        <h1>Chaves PIX</h1>
+                        <p>Gerenciar suas chaves PIX</p>
+                    </div>
+                    
+                    <div class="control-card">
+                        <div class="card-header-section">
+                            <h3>Minhas Chaves PIX</h3>
+                            <p>Adicione e gerencie suas chaves PIX</p>
+                        </div>
+                        
+                        <div class="profile-form">
+                            <div class="form-group">
+                                <label>Tipo de Chave</label>
+                                <select id="pixKeyType">
+                                    <option value="cpf">CPF</option>
+                                    <option value="email">E-mail</option>
+                                    <option value="telefone">Telefone</option>
+                                    <option value="aleatoria">Chave Aleatória</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Chave PIX</label>
+                                <input type="text" id="pixKeyInput" placeholder="Digite a chave PIX" value="">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Nome do Titular</label>
+                                <input type="text" id="pixOwnerName" placeholder="Nome completo" value="">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Nome do Banco</label>
+                                <input type="text" id="pixBankName" placeholder="Ex: Banco do Brasil, Nubank, etc." value="">
+                            </div>
+                            
+                            <button class="btn-primary" id="addPixKeyBtn">Adicionar Chave PIX</button>
+                            
+                            <div class="pix-keys-list" id="pixKeysList" style="margin-top: 20px;">
+                                <!-- Lista de chaves PIX será gerada via JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Gastos Section -->
+                <section id="gastos" class="content-section">
+                    <div class="page-header">
+                        <h1>Gastos</h1>
+                        <p>Registrar gastos adicionais</p>
+                    </div>
+                    
+                    <div class="control-card">
+                        <div class="card-header-section">
+                            <h3>Registrar Gastos</h3>
+                            <p>Adicione gastos que não serão somados aos cálculos principais</p>
+                        </div>
+                        
+                        <div class="profile-form">
+                            <div class="form-group">
+                                <label>Descrição do Gasto</label>
+                                <input type="text" id="expenseDescription" placeholder="Ex: Almoço, Transporte, etc." value="">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Valor (R$)</label>
+                                <input type="number" id="expenseValue" step="0.01" placeholder="0.00" value="">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Data</label>
+                                <input type="date" id="expenseDate" value="">
+                            </div>
+                            
+                            <button class="btn-primary" id="addExpenseBtn">Adicionar Gasto</button>
+                            
+                            <div class="expenses-list" id="expensesList" style="margin-top: 20px;">
+                                <!-- Lista de gastos será gerada via JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Admin Section -->
+                <section id="admin" class="content-section">
+                    <div class="page-header">
+                        <h1>Administração</h1>
+                        <p>Gerenciar usuários do sistema</p>
+                    </div>
+                    
+                    <div class="control-card">
+                        <div class="card-header-section">
+                            <h3>Configurações de Cadastro</h3>
+                            <p>Controle o cadastro público de novos usuários</p>
+                        </div>
+                        
+                        <div class="profile-form">
+                            <div class="form-group" style="flex-direction: row; align-items: center; justify-content: space-between; padding: 1rem; background: rgba(255, 255, 255, 0.05); border-radius: 8px; margin-bottom: 1.5rem;">
+                                <div>
+                                    <label style="margin: 0; font-size: 1rem; font-weight: 600;">Permitir Cadastro Público</label>
+                                    <p style="margin: 0.25rem 0 0 0; color: var(--text-secondary); font-size: 0.85rem;">Ative para permitir que pessoas se cadastrem pela tela de login</p>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="enablePublicRegistration">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="control-card" style="margin-top: 1.5rem;">
+                        <div class="card-header-section">
+                            <h3>Cadastrar Novo Usuário</h3>
+                            <p>Adicione usuários que terão acesso a todas as funções exceto administração</p>
+                        </div>
+                        
+                        <div class="profile-form">
+                            <div class="form-group">
+                                <label>Nome de Usuário</label>
+                                <input type="text" id="newUsername" placeholder="Digite o nome de usuário" value="">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Senha</label>
+                                <div style="position: relative;">
+                                    <input type="password" id="newUserPassword" placeholder="Digite a senha" value="" style="padding-right: 45px;">
+                                    <button type="button" id="toggleNewUserPassword" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 18px; padding: 5px;">
+                                        <i class="fas fa-eye" id="newUserPasswordIcon"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Confirmar Senha</label>
+                                <input type="password" id="newUserPasswordConfirm" placeholder="Confirme a senha" value="">
+                            </div>
+                            
+                            <button class="btn-primary" id="addUserBtn">Cadastrar Usuário</button>
+                            
+                            <div class="users-list" id="usersList" style="margin-top: 30px;">
+                                <div class="card-header-section" style="margin-bottom: 20px;">
+                                    <h3>Usuários Cadastrados</h3>
+                                    <p>Lista de todos os usuários do sistema</p>
+                                </div>
+                                <!-- Lista de usuários será gerada via JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Contas Section -->
+                <section id="contas" class="content-section">
+                    <div class="page-header">
+                        <h1>Contas</h1>
+                        <p>Gerenciamento de contas</p>
+                    </div>
+                    
+                    <div class="profile-content">
+                        <div class="control-card">
+                            <div class="card-header-section">
+                                <h3>🚧 Em Desenvolvimento</h3>
+                                <p style="color: #8b5cf6; font-size: 18px; font-weight: 600; margin-top: 20px;">
+                                    Esta funcionalidade está em desenvolvimento e estará disponível em breve!
+                                </p>
+                                <p style="color: #a0aec0; margin-top: 10px;">
+                                    Fique atento para atualizações futuras.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Perfil Section -->
+                <section id="perfil" class="content-section">
+                    <div class="page-header">
+                        <h1>Perfil</h1>
+                        <p>Configurações e informações pessoais</p>
+                    </div>
+                    
+                    <div class="profile-content">
+                        <!-- Profile Card -->
+                        <div class="control-card">
+                            <div class="card-header-section">
+                                <h3>Informações do Perfil</h3>
+                                <p>Gerencie suas informações pessoais e preferências</p>
+                            </div>
+                            
+                            <div class="profile-form">
+                                <div class="form-group">
+                                    <label>Nome de Usuário</label>
+                                    <input type="text" id="profileUsername" value="weslleyleno60" placeholder="Digite seu nome de usuário">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Senha</label>
+                                    <div style="position: relative;">
+                                        <input type="password" id="profilePassword" value="" placeholder="Digite sua senha" style="padding-right: 45px;">
+                                        <button type="button" id="toggleProfilePassword" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 18px; padding: 5px;">
+                                            <i class="fas fa-eye" id="profilePasswordIcon"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Foto de Perfil (Avatar)</label>
+                                    <div class="avatar-selection">
+                                        <button type="button" class="btn-avatar-select" id="openAvatarModal">
+                                            <span id="currentAvatarPreview">Selecione um avatar</span>
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                        <input type="hidden" id="selectedAvatar" value="1">
+                                        <input type="hidden" id="selectedAvatarUrl" value="">
+                                    </div>
+                                </div>
+                                
+                                <div class="form-actions">
+                                    <button class="btn-primary" id="saveProfile">Salvar Alterações</button>
+                                    <button class="btn-secondary" id="logoutBtn" style="background: #ef4444; margin-top: 10px; padding: 0.4rem 0.8rem; font-size: 0.85rem;">Sair</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal: Adicionar Conta -->
+    <div id="addAccountModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Adicionar nova conta</h2>
+                <button class="modal-close" id="closeModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="financial-fields">
+                    <div class="form-group">
+                        <label>DEPÓSITO (R$)</label>
+                        <input type="number" id="depositoInput" step="any" min="-999999" onwheel="this.blur()" placeholder="0">
+                    </div>
+                    <div class="form-group">
+                        <label>RE-DEPÓSITO (R$)</label>
+                        <input type="number" id="redepositoInput" step="any" min="-999999" onwheel="this.blur()" placeholder="0">
+                    </div>
+                    <div class="form-group">
+                        <label>SAQUE (R$)</label>
+                        <input type="number" id="saqueInput" step="any" min="-999999" onwheel="this.blur()" placeholder="0">
+                    </div>
+                    <div class="form-group">
+                        <label>BAÚ (R$)</label>
+                        <input type="number" id="bauInput" step="any" min="-999999" onwheel="this.blur()" placeholder="0">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-save">Salvar conta</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Ver Contas -->
+    <div id="viewAccountsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Contas cadastradas</h2>
+                <button class="modal-close" id="closeViewModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="empty-accounts">
+                    <p>Nenhuma conta encontrada.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Despesas -->
+    <div id="expensesModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Despesas operacionais</h2>
+                <button class="modal-close" id="closeExpensesModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>GASTOS COM PROXY (R$)</label>
+                    <input type="number" value="0" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label>GASTOS COM NÚMEROS (R$)</label>
+                    <input type="number" value="0" step="0.01">
+                </div>
+                <div class="expense-total-modal">
+                    <span>Total: R$ 0,00</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Selecionar Avatar -->
+    <div id="avatarModal" class="modal">
+        <div class="modal-content modal-avatar-content">
+            <div class="modal-header">
+                <h2>Selecione seu Avatar</h2>
+                <button class="modal-close" id="closeAvatarModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 20px; text-align: center;">
+                    <button type="button" class="btn-primary" id="uploadPhotoBtn" style="padding: 12px 24px; font-size: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <i class="fas fa-image" style="margin-right: 8px;"></i>
+                        Enviar Foto da Galeria
+                    </button>
+                    <input type="file" id="photoUpload" accept="image/*" style="display: none;">
+                </div>
+                <div style="text-align: center; margin-bottom: 15px; color: #a0aec0; font-size: 13px;">
+                    <p>Ou escolha um avatar abaixo:</p>
+                </div>
+                <div class="avatar-grid" id="avatarGrid">
+                    <!-- Avatares serão gerados via JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Definir Meta Mensal -->
+    <div id="monthlyGoalModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Definir Meta Mensal</h2>
+                <button class="modal-close" id="closeMonthlyGoalModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Meta Mensal (R$)</label>
+                    <input type="number" id="monthlyGoalInput" step="0.01" placeholder="0.00" min="0">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-save" id="saveMonthlyGoalBtn">Salvar Meta</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Calculadora -->
+    <div id="calculatorModal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h2>Calculadora</h2>
+                <button class="modal-close" id="closeCalculatorModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="calculator">
+                    <div class="calculator-display" id="calcDisplay">0</div>
+                    <div class="calculator-buttons">
+                        <button class="calc-btn calc-clear" onclick="calcClear()">C</button>
+                        <button class="calc-btn calc-clear" onclick="calcClearEntry()">CE</button>
+                        <button class="calc-btn calc-operator" onclick="calcBackspace()">⌫</button>
+                        <button class="calc-btn calc-operator" onclick="calcSetOperation('/')">÷</button>
+                        
+                        <button class="calc-btn calc-number" onclick="calcInput('7')">7</button>
+                        <button class="calc-btn calc-number" onclick="calcInput('8')">8</button>
+                        <button class="calc-btn calc-number" onclick="calcInput('9')">9</button>
+                        <button class="calc-btn calc-operator" onclick="calcSetOperation('*')">×</button>
+                        
+                        <button class="calc-btn calc-number" onclick="calcInput('4')">4</button>
+                        <button class="calc-btn calc-number" onclick="calcInput('5')">5</button>
+                        <button class="calc-btn calc-number" onclick="calcInput('6')">6</button>
+                        <button class="calc-btn calc-operator" onclick="calcSetOperation('-')">−</button>
+                        
+                        <button class="calc-btn calc-number" onclick="calcInput('1')">1</button>
+                        <button class="calc-btn calc-number" onclick="calcInput('2')">2</button>
+                        <button class="calc-btn calc-number" onclick="calcInput('3')">3</button>
+                        <button class="calc-btn calc-operator" onclick="calcSetOperation('+')">+</button>
+                        
+                        <button class="calc-btn calc-number calc-zero" onclick="calcInput('0')">0</button>
+                        <button class="calc-btn calc-number" onclick="calcInput('.')">.</button>
+                        <button class="calc-btn calc-equals" onclick="calcEquals()">=</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
