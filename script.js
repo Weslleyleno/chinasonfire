@@ -775,7 +775,7 @@ function deleteAccount(accountId) {
 // ============================================
 // OPERATIONAL EXPENSES (Despesas Operacionais)
 // ============================================
-function saveOperationalExpenses() {
+async function saveOperationalExpenses() {
     if (!currentUser) return;
     
     const proxyExpense = document.getElementById('proxyExpenseInput');
@@ -787,13 +787,46 @@ function saveOperationalExpenses() {
             numbers: parseFloat(numbersExpense.value) || 0
         };
         
+        // Salvar no localStorage primeiro (cache rápido)
         localStorage.setItem(getUserDataKey('operationalExpenses'), JSON.stringify(expenses));
+        
+        // Sincronizar com Supabase (em background)
+        if (window.supabaseClient) {
+            try {
+                await saveOperationalExpensesToSupabase();
+            } catch (error) {
+                console.error('Erro ao sincronizar despesas operacionais com Supabase:', error);
+            }
+        }
     }
 }
 
-function loadOperationalExpenses() {
+async function loadOperationalExpenses() {
     if (!currentUser) return;
     
+    // Tentar carregar do Supabase primeiro
+    if (window.supabaseClient) {
+        try {
+            await loadOperationalExpensesFromSupabase();
+            // Sincronizar com localStorage como cache
+            const proxyExpense = document.getElementById('proxyExpenseInput');
+            const numbersExpense = document.getElementById('numbersExpenseInput');
+            if (proxyExpense && numbersExpense) {
+                const expenses = {
+                    proxy: parseFloat(proxyExpense.value) || 0,
+                    numbers: parseFloat(numbersExpense.value) || 0
+                };
+                localStorage.setItem(getUserDataKey('operationalExpenses'), JSON.stringify(expenses));
+            }
+            // Calcular total após carregar
+            calculateExpenses();
+            return;
+        } catch (error) {
+            console.error('Erro ao carregar despesas operacionais do Supabase, usando localStorage:', error);
+        }
+    }
+    
+    // Fallback para localStorage
     const saved = localStorage.getItem(getUserDataKey('operationalExpenses'));
     const proxyExpense = document.getElementById('proxyExpenseInput');
     const numbersExpense = document.getElementById('numbersExpenseInput');
@@ -893,11 +926,10 @@ function checkLogin() {
     if (loggedInUser) {
         currentUser = loggedInUser;
         showDashboard();
-        loadUserData();
-        // Carregar despesas operacionais após verificar login
-        setTimeout(() => {
+        loadUserData().then(() => {
+            // Carregar despesas operacionais após carregar dados
             loadOperationalExpenses();
-        }, 100);
+        });
     } else {
         showLogin();
     }
@@ -1118,15 +1150,13 @@ function login() {
         
         if (loginError) loginError.style.display = 'none';
         showDashboard();
-        loadUserData();
-        checkAdminStatus(); // Verificar status de admin após login
-        
-        // Refresh do perfil após login com pequeno delay para garantir que tudo foi carregado
-        setTimeout(() => {
+        loadUserData().then(() => {
+            checkAdminStatus(); // Verificar status de admin após login
+            // Refresh do perfil após login
             updateSidebarAvatar(); // Atualizar avatar e nome no sidebar
             updateGreeting(); // Atualizar saudação com nome correto
             initProfile(); // Recarregar perfil do usuário logado
-        }, 100);
+        });
         return;
     }
     
@@ -1176,11 +1206,11 @@ function login() {
             
         if (loginError) loginError.style.display = 'none';
         showDashboard();
-        loadUserData();
-        checkAdminStatus(); // Verificar status de admin após login
-        
-        // Carregar despesas operacionais após login
-        loadOperationalExpenses();
+        loadUserData().then(() => {
+            checkAdminStatus(); // Verificar status de admin após login
+            // Carregar despesas operacionais após login
+            loadOperationalExpenses();
+        });
         
         // Iniciar atualização automática após login
         startAutoRefresh();
@@ -1231,10 +1261,508 @@ function getUserDataKey(key) {
     return `userData_${currentUser}_${key}`;
 }
 
-function loadUserData() {
+// ============================================
+// SUPABASE SYNC FUNCTIONS
+// ============================================
+
+// Cache de user IDs para evitar múltiplas consultas
+let userIdCache = {};
+
+// Obter ou criar user ID no Supabase
+async function getUserId(username) {
+    if (!window.supabaseClient) {
+        console.warn('Supabase não está configurado');
+        return null;
+    }
+    
+    // Verificar cache
+    if (userIdCache[username]) {
+        return userIdCache[username];
+    }
+    
+    try {
+        // Buscar usuário existente
+        const { data: existingUser, error: searchError } = await window.supabaseClient
+            .from('users')
+            .select('id')
+            .eq('username', username)
+            .single();
+        
+        if (existingUser && !searchError) {
+            userIdCache[username] = existingUser.id;
+            return existingUser.id;
+        }
+        
+        // Se não existe, criar novo usuário
+        const { data: newUser, error: createError } = await window.supabaseClient
+            .from('users')
+            .insert({
+                username: username,
+                password_hash: '', // Será atualizado quando salvar perfil
+                is_admin: username === 'weslleyleno60'
+            })
+            .select('id')
+            .single();
+        
+        if (newUser && !createError) {
+            userIdCache[username] = newUser.id;
+            return newUser.id;
+        }
+        
+        console.error('Erro ao criar/buscar usuário:', createError || searchError);
+        return null;
+    } catch (error) {
+        console.error('Erro ao acessar Supabase:', error);
+        return null;
+    }
+}
+
+// Salvar contas no Supabase
+async function saveAccountsToSupabase() {
+    if (!currentUser || !window.supabaseClient) return;
+    
+    const userId = await getUserId(currentUser);
+    if (!userId) return;
+    
+    try {
+        // Deletar contas antigas do usuário
+        await window.supabaseClient
+            .from('accounts')
+            .delete()
+            .eq('user_id', userId);
+        
+        // Inserir novas contas
+        if (accounts.length > 0) {
+            const accountsToInsert = accounts.map(account => ({
+                user_id: userId,
+                deposito: parseFloat(account.deposito) || 0,
+                redeposito: parseFloat(account.redeposito) || 0,
+                saque: parseFloat(account.saque) || 0,
+                bau: parseFloat(account.bau) || 0,
+                date: account.date
+            }));
+            
+            await window.supabaseClient
+                .from('accounts')
+                .insert(accountsToInsert);
+        }
+        
+        console.log('✅ Contas sincronizadas com Supabase');
+    } catch (error) {
+        console.error('Erro ao salvar contas no Supabase:', error);
+    }
+}
+
+// Carregar contas do Supabase
+async function loadAccountsFromSupabase() {
+    if (!currentUser || !window.supabaseClient) return [];
+    
+    const userId = await getUserId(currentUser);
+    if (!userId) return [];
+    
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('accounts')
+            .select('*')
+            .eq('user_id', userId)
+            .order('date', { ascending: false });
+        
+        if (error) {
+            console.error('Erro ao carregar contas do Supabase:', error);
+            return [];
+        }
+        
+        if (data) {
+            return data.map(account => ({
+                deposito: account.deposito || 0,
+                redeposito: account.redeposito || 0,
+                saque: account.saque || 0,
+                bau: account.bau || 0,
+                date: account.date
+            }));
+        }
+        
+        return [];
+    } catch (error) {
+        console.error('Erro ao carregar contas do Supabase:', error);
+        return [];
+    }
+}
+
+// Salvar proxies no Supabase
+async function saveProxiesToSupabase() {
+    if (!currentUser || !window.supabaseClient) return;
+    
+    const userId = await getUserId(currentUser);
+    if (!userId) return;
+    
+    try {
+        await window.supabaseClient
+            .from('proxies')
+            .delete()
+            .eq('user_id', userId);
+        
+        if (proxies.length > 0) {
+            const proxiesToInsert = proxies.map(proxy => ({
+                user_id: userId,
+                name: proxy.name || '',
+                address: proxy.address
+            }));
+            
+            await window.supabaseClient
+                .from('proxies')
+                .insert(proxiesToInsert);
+        }
+        
+        console.log('✅ Proxies sincronizados com Supabase');
+    } catch (error) {
+        console.error('Erro ao salvar proxies no Supabase:', error);
+    }
+}
+
+// Carregar proxies do Supabase
+async function loadProxiesFromSupabase() {
+    if (!currentUser || !window.supabaseClient) return [];
+    
+    const userId = await getUserId(currentUser);
+    if (!userId) return [];
+    
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('proxies')
+            .select('*')
+            .eq('user_id', userId);
+        
+        if (error) {
+            console.error('Erro ao carregar proxies do Supabase:', error);
+            return [];
+        }
+        
+        if (data) {
+            return data.map(proxy => ({
+                name: proxy.name || '',
+                address: proxy.address
+            }));
+        }
+        
+        return [];
+    } catch (error) {
+        console.error('Erro ao carregar proxies do Supabase:', error);
+        return [];
+    }
+}
+
+// Salvar chaves PIX no Supabase
+async function savePixKeysToSupabase() {
+    if (!currentUser || !window.supabaseClient) return;
+    
+    const userId = await getUserId(currentUser);
+    if (!userId) return;
+    
+    try {
+        await window.supabaseClient
+            .from('pix_keys')
+            .delete()
+            .eq('user_id', userId);
+        
+        if (pixKeys.length > 0) {
+            const pixKeysToInsert = pixKeys.map(pix => ({
+                user_id: userId,
+                type: pix.type,
+                key: pix.key,
+                owner_name: pix.ownerName || '',
+                bank_name: pix.bankName || ''
+            }));
+            
+            await window.supabaseClient
+                .from('pix_keys')
+                .insert(pixKeysToInsert);
+        }
+        
+        console.log('✅ Chaves PIX sincronizadas com Supabase');
+    } catch (error) {
+        console.error('Erro ao salvar chaves PIX no Supabase:', error);
+    }
+}
+
+// Carregar chaves PIX do Supabase
+async function loadPixKeysFromSupabase() {
+    if (!currentUser || !window.supabaseClient) return [];
+    
+    const userId = await getUserId(currentUser);
+    if (!userId) return [];
+    
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('pix_keys')
+            .select('*')
+            .eq('user_id', userId);
+        
+        if (error) {
+            console.error('Erro ao carregar chaves PIX do Supabase:', error);
+            return [];
+        }
+        
+        if (data) {
+            return data.map(pix => ({
+                type: pix.type,
+                key: pix.key,
+                ownerName: pix.owner_name || '',
+                bankName: pix.bank_name || ''
+            }));
+        }
+        
+        return [];
+    } catch (error) {
+        console.error('Erro ao carregar chaves PIX do Supabase:', error);
+        return [];
+    }
+}
+
+// Salvar gastos no Supabase
+async function saveExpensesToSupabase() {
+    if (!currentUser || !window.supabaseClient) return;
+    
+    const userId = await getUserId(currentUser);
+    if (!userId) return;
+    
+    try {
+        await window.supabaseClient
+            .from('expenses')
+            .delete()
+            .eq('user_id', userId);
+        
+        if (expenses.length > 0) {
+            const expensesToInsert = expenses.map(exp => ({
+                user_id: userId,
+                description: exp.description || '',
+                value: parseFloat(exp.value) || 0,
+                date: exp.date
+            }));
+            
+            await window.supabaseClient
+                .from('expenses')
+                .insert(expensesToInsert);
+        }
+        
+        console.log('✅ Gastos sincronizados com Supabase');
+    } catch (error) {
+        console.error('Erro ao salvar gastos no Supabase:', error);
+    }
+}
+
+// Carregar gastos do Supabase
+async function loadExpensesFromSupabase() {
+    if (!currentUser || !window.supabaseClient) return [];
+    
+    const userId = await getUserId(currentUser);
+    if (!userId) return [];
+    
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('expenses')
+            .select('*')
+            .eq('user_id', userId)
+            .order('date', { ascending: false });
+        
+        if (error) {
+            console.error('Erro ao carregar gastos do Supabase:', error);
+            return [];
+        }
+        
+        if (data) {
+            return data.map(exp => ({
+                description: exp.description || '',
+                value: exp.value || 0,
+                date: exp.date
+            }));
+        }
+        
+        return [];
+    } catch (error) {
+        console.error('Erro ao carregar gastos do Supabase:', error);
+        return [];
+    }
+}
+
+// Salvar despesas operacionais no Supabase
+async function saveOperationalExpensesToSupabase() {
+    if (!currentUser || !window.supabaseClient) return;
+    
+    const userId = await getUserId(currentUser);
+    if (!userId) return;
+    
+    try {
+        const proxyExpense = parseFloat(document.getElementById('proxyExpenseInput')?.value) || 0;
+        const numbersExpense = parseFloat(document.getElementById('numbersExpenseInput')?.value) || 0;
+        
+        await window.supabaseClient
+            .from('operational_expenses')
+            .upsert({
+                user_id: userId,
+                proxy_expense: proxyExpense,
+                numbers_expense: numbersExpense
+            }, { onConflict: 'user_id' });
+        
+        console.log('✅ Despesas operacionais sincronizadas com Supabase');
+    } catch (error) {
+        console.error('Erro ao salvar despesas operacionais no Supabase:', error);
+    }
+}
+
+// Carregar despesas operacionais do Supabase
+async function loadOperationalExpensesFromSupabase() {
+    if (!currentUser || !window.supabaseClient) return;
+    
+    const userId = await getUserId(currentUser);
+    if (!userId) return;
+    
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('operational_expenses')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+        
+        if (error && error.code !== 'PGRST116') { // PGRST116 = não encontrado
+            console.error('Erro ao carregar despesas operacionais do Supabase:', error);
+            return;
+        }
+        
+        if (data) {
+            const proxyInput = document.getElementById('proxyExpenseInput');
+            const numbersInput = document.getElementById('numbersExpenseInput');
+            
+            if (proxyInput) proxyInput.value = data.proxy_expense || 0;
+            if (numbersInput) numbersInput.value = data.numbers_expense || 0;
+        }
+    } catch (error) {
+        console.error('Erro ao carregar despesas operacionais do Supabase:', error);
+    }
+}
+
+// Salvar plataformas no Supabase (globais)
+async function savePlatformsToSupabase() {
+    if (!window.supabaseClient) return;
+    
+    try {
+        // Buscar todas as plataformas existentes
+        const { data: existingPlatforms } = await window.supabaseClient
+            .from('platforms')
+            .select('id, name');
+        
+        const existingNames = existingPlatforms?.map(p => p.name) || [];
+        const newPlatforms = platforms.filter(p => !existingNames.includes(p.name));
+        
+        if (newPlatforms.length > 0) {
+            const userId = await getUserId(currentUser || 'weslleyleno60');
+            
+            const platformsToInsert = newPlatforms.map(platform => ({
+                name: platform.name,
+                status: platform.status,
+                description: platform.description || '',
+                created_by: userId,
+                updated_by: userId
+            }));
+            
+            await window.supabaseClient
+                .from('platforms')
+                .insert(platformsToInsert);
+        }
+        
+        // Atualizar plataformas existentes
+        for (const platform of platforms) {
+            if (existingNames.includes(platform.name)) {
+                const userId = await getUserId(currentUser || 'weslleyleno60');
+                await window.supabaseClient
+                    .from('platforms')
+                    .update({
+                        status: platform.status,
+                        description: platform.description || '',
+                        updated_by: userId
+                    })
+                    .eq('name', platform.name);
+            }
+        }
+        
+        console.log('✅ Plataformas sincronizadas com Supabase');
+    } catch (error) {
+        console.error('Erro ao salvar plataformas no Supabase:', error);
+    }
+}
+
+// Carregar plataformas do Supabase
+async function loadPlatformsFromSupabase() {
+    if (!window.supabaseClient) return [];
+    
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('platforms')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) {
+            console.error('Erro ao carregar plataformas do Supabase:', error);
+            return [];
+        }
+        
+        if (data) {
+            return data.map(platform => ({
+                name: platform.name,
+                status: platform.status,
+                description: platform.description || '',
+                createdAt: platform.created_at,
+                updatedAt: platform.updated_at
+            }));
+        }
+        
+        return [];
+    } catch (error) {
+        console.error('Erro ao carregar plataformas do Supabase:', error);
+        return [];
+    }
+}
+
+async function loadUserData() {
     if (!currentUser) return;
     
-    // Carregar dados específicos do usuário
+    // Tentar carregar do Supabase primeiro
+    if (window.supabaseClient) {
+        try {
+            const [supabaseAccounts, supabaseProxies, supabasePixKeys, supabaseExpenses] = await Promise.all([
+                loadAccountsFromSupabase(),
+                loadProxiesFromSupabase(),
+                loadPixKeysFromSupabase(),
+                loadExpensesFromSupabase()
+            ]);
+            
+            if (supabaseAccounts.length > 0) accounts = supabaseAccounts;
+            if (supabaseProxies.length > 0) proxies = supabaseProxies;
+            if (supabasePixKeys.length > 0) pixKeys = supabasePixKeys;
+            if (supabaseExpenses.length > 0) expenses = supabaseExpenses;
+            
+            // Sincronizar com localStorage como cache
+            localStorage.setItem(getUserDataKey('accounts'), JSON.stringify(accounts));
+            localStorage.setItem(getUserDataKey('proxies'), JSON.stringify(proxies));
+            localStorage.setItem(getUserDataKey('pixKeys'), JSON.stringify(pixKeys));
+            localStorage.setItem(getUserDataKey('expenses'), JSON.stringify(expenses));
+        } catch (error) {
+            console.error('Erro ao carregar do Supabase, usando localStorage:', error);
+            // Fallback para localStorage
+            loadFromLocalStorage();
+        }
+    } else {
+        // Se Supabase não estiver disponível, usar localStorage
+        loadFromLocalStorage();
+    }
+    
+    // Carregar despesas operacionais do Supabase
+    if (window.supabaseClient) {
+        await loadOperationalExpensesFromSupabase();
+    }
+}
+
+function loadFromLocalStorage() {
     const userAccounts = localStorage.getItem(getUserDataKey('accounts'));
     if (userAccounts) {
         try {
@@ -1277,6 +1805,45 @@ function loadUserData() {
         }
     } else {
         expenses = [];
+    }
+}
+
+async function loadUserData() {
+    if (!currentUser) return;
+    
+    // Tentar carregar do Supabase primeiro
+    if (window.supabaseClient) {
+        try {
+            const [supabaseAccounts, supabaseProxies, supabasePixKeys, supabaseExpenses] = await Promise.all([
+                loadAccountsFromSupabase(),
+                loadProxiesFromSupabase(),
+                loadPixKeysFromSupabase(),
+                loadExpensesFromSupabase()
+            ]);
+            
+            if (supabaseAccounts.length > 0) accounts = supabaseAccounts;
+            if (supabaseProxies.length > 0) proxies = supabaseProxies;
+            if (supabasePixKeys.length > 0) pixKeys = supabasePixKeys;
+            if (supabaseExpenses.length > 0) expenses = supabaseExpenses;
+            
+            // Sincronizar com localStorage como cache
+            localStorage.setItem(getUserDataKey('accounts'), JSON.stringify(accounts));
+            localStorage.setItem(getUserDataKey('proxies'), JSON.stringify(proxies));
+            localStorage.setItem(getUserDataKey('pixKeys'), JSON.stringify(pixKeys));
+            localStorage.setItem(getUserDataKey('expenses'), JSON.stringify(expenses));
+        } catch (error) {
+            console.error('Erro ao carregar do Supabase, usando localStorage:', error);
+            // Fallback para localStorage
+            loadFromLocalStorage();
+        }
+    } else {
+        // Se Supabase não estiver disponível, usar localStorage
+        loadFromLocalStorage();
+    }
+    
+    // Carregar despesas operacionais do Supabase
+    if (window.supabaseClient) {
+        await loadOperationalExpensesFromSupabase();
     }
     
     // Perfil do usuário - sempre carregar o perfil do usuário logado
@@ -1346,8 +1913,10 @@ function loadUserData() {
     // Plataformas são globais (não por usuário)
     loadPlatforms();
     
-    // Carregar despesas operacionais
-    loadOperationalExpenses();
+    // Carregar despesas operacionais (async)
+    loadOperationalExpenses().then(() => {
+        // Despesas operacionais carregadas
+    });
     
     // Recarregar tudo
     calculateAllTotals();
@@ -1359,14 +1928,29 @@ function loadUserData() {
     initProfile();
 }
 
-function saveUserData() {
+async function saveUserData() {
     if (!currentUser) return;
     
-    // Salvar dados específicos do usuário
+    // Salvar no localStorage primeiro (cache rápido)
     localStorage.setItem(getUserDataKey('accounts'), JSON.stringify(accounts));
     localStorage.setItem(getUserDataKey('proxies'), JSON.stringify(proxies));
     localStorage.setItem(getUserDataKey('pixKeys'), JSON.stringify(pixKeys));
     localStorage.setItem(getUserDataKey('expenses'), JSON.stringify(expenses));
+    
+    // Sincronizar com Supabase (em background)
+    if (window.supabaseClient) {
+        try {
+            await Promise.all([
+                saveAccountsToSupabase(),
+                saveProxiesToSupabase(),
+                savePixKeysToSupabase(),
+                saveExpensesToSupabase(),
+                saveOperationalExpensesToSupabase()
+            ]);
+        } catch (error) {
+            console.error('Erro ao sincronizar com Supabase:', error);
+        }
+    }
     
     // NÃO sobrescrever o perfil aqui - o perfil é salvo apenas quando o usuário clica em "Salvar Alterações"
     // Isso evita sobrescrever o avatar quando o usuário faz logout/login
@@ -1539,8 +2123,28 @@ document.addEventListener('DOMContentLoaded', () => {
         sidebar = document.querySelector('.sidebar');
     }
     if (menuToggle && sidebar) {
-        menuToggle.addEventListener('click', () => {
+        menuToggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             sidebar.classList.toggle('open');
+            // Adicionar/remover overlay no mobile
+            if (window.innerWidth <= 768) {
+                if (sidebar.classList.contains('open')) {
+                    document.body.classList.add('sidebar-open');
+                } else {
+                    document.body.classList.remove('sidebar-open');
+                }
+            }
+        });
+        
+        // Fechar menu ao clicar no overlay
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
+                if (!sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
+                    sidebar.classList.remove('open');
+                    document.body.classList.remove('sidebar-open');
+                }
+            }
         });
     }
     
@@ -1926,7 +2530,9 @@ function refreshAllData() {
     console.log('🔄 Atualizando dados automaticamente...');
     
     // Recarregar dados do usuário
-    loadUserData();
+    loadUserData().then(() => {
+        // Dados recarregados
+    });
     
     // Atualizar ranking (sempre, pois pode ter mudanças de outros usuários)
     updateRanking();
@@ -3206,11 +3812,21 @@ function loadProxies() {
     updateProxyList();
 }
 
-function saveProxies() {
+async function saveProxies() {
+    // Salvar no localStorage primeiro (cache rápido)
     if (currentUser) {
         localStorage.setItem(getUserDataKey('proxies'), JSON.stringify(proxies));
     } else {
         localStorage.setItem('proxies', JSON.stringify(proxies));
+    }
+    
+    // Sincronizar com Supabase (em background)
+    if (window.supabaseClient && currentUser) {
+        try {
+            await saveProxiesToSupabase();
+        } catch (error) {
+            console.error('Erro ao sincronizar proxies com Supabase:', error);
+        }
     }
 }
 
@@ -3312,11 +3928,21 @@ function loadPixKeys() {
     updatePixKeysList();
 }
 
-function savePixKeys() {
+async function savePixKeys() {
+    // Salvar no localStorage primeiro (cache rápido)
     if (currentUser) {
         localStorage.setItem(getUserDataKey('pixKeys'), JSON.stringify(pixKeys));
     } else {
         localStorage.setItem('pixKeys', JSON.stringify(pixKeys));
+    }
+    
+    // Sincronizar com Supabase (em background)
+    if (window.supabaseClient && currentUser) {
+        try {
+            await savePixKeysToSupabase();
+        } catch (error) {
+            console.error('Erro ao sincronizar chaves PIX com Supabase:', error);
+        }
     }
 }
 
@@ -3409,11 +4035,21 @@ function loadExpenses() {
     updateExpensesList();
 }
 
-function saveExpenses() {
+async function saveExpenses() {
+    // Salvar no localStorage primeiro (cache rápido)
     if (currentUser) {
         localStorage.setItem(getUserDataKey('expenses'), JSON.stringify(expenses));
     } else {
         localStorage.setItem('expenses', JSON.stringify(expenses));
+    }
+    
+    // Sincronizar com Supabase (em background)
+    if (window.supabaseClient && currentUser) {
+        try {
+            await saveExpensesToSupabase();
+        } catch (error) {
+            console.error('Erro ao sincronizar gastos com Supabase:', error);
+        }
     }
 }
 
@@ -3421,15 +4057,8 @@ function updateExpensesList() {
     const expensesList = document.getElementById('expensesList');
     if (!expensesList) return;
     
-    // Atualizar visibilidade do item no menu
-    const gastosNavItem = document.getElementById('gastosNavItem');
-    if (gastosNavItem) {
-        if (expenses.length > 0) {
-            gastosNavItem.style.display = 'flex';
-        } else {
-            gastosNavItem.style.display = 'none';
-        }
-    }
+    // Gastos sempre visível no menu (como Proxy e Chaves PIX)
+    // Não precisa esconder o menu
     
     if (expenses.length === 0) {
         expensesList.innerHTML = '<p style="color: #a0aec0; text-align: center; padding: 20px;">Nenhum gasto registrado ainda.</p>';
@@ -3506,20 +4135,63 @@ function deleteExpense(index) {
 // ============================================
 // PLATFORMS MANAGEMENT (GLOBAL)
 // ============================================
-function loadPlatforms() {
-    const saved = localStorage.getItem('platforms');
-    if (saved) {
+async function loadPlatforms() {
+    // Tentar carregar do Supabase primeiro
+    if (window.supabaseClient) {
         try {
-            platforms = JSON.parse(saved);
-        } catch(e) {
-            platforms = [];
+            const supabasePlatforms = await loadPlatformsFromSupabase();
+            if (supabasePlatforms.length > 0) {
+                platforms = supabasePlatforms;
+                // Sincronizar com localStorage como cache
+                localStorage.setItem('platforms', JSON.stringify(platforms));
+            } else {
+                // Se não tiver no Supabase, tentar localStorage
+                const saved = localStorage.getItem('platforms');
+                if (saved) {
+                    try {
+                        platforms = JSON.parse(saved);
+                    } catch(e) {
+                        platforms = [];
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao carregar plataformas do Supabase, usando localStorage:', error);
+            const saved = localStorage.getItem('platforms');
+            if (saved) {
+                try {
+                    platforms = JSON.parse(saved);
+                } catch(e) {
+                    platforms = [];
+                }
+            }
+        }
+    } else {
+        // Se Supabase não estiver disponível, usar localStorage
+        const saved = localStorage.getItem('platforms');
+        if (saved) {
+            try {
+                platforms = JSON.parse(saved);
+            } catch(e) {
+                platforms = [];
+            }
         }
     }
     updatePlatformsList();
 }
 
-function savePlatforms() {
+async function savePlatforms() {
+    // Salvar no localStorage primeiro (cache rápido)
     localStorage.setItem('platforms', JSON.stringify(platforms));
+    
+    // Sincronizar com Supabase (em background)
+    if (window.supabaseClient) {
+        try {
+            await savePlatformsToSupabase();
+        } catch (error) {
+            console.error('Erro ao sincronizar plataformas com Supabase:', error);
+        }
+    }
 }
 
 function updatePlatformsList() {
