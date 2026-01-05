@@ -268,6 +268,14 @@ button, .btn-primary, .btn-save, .goal-btn, .calc-btn {
     color: var(--text-secondary);
 }
 
+.version-info {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    opacity: 0.7;
+    margin-top: 0.25rem;
+}
+
 .user-info h3 {
     font-size: 1rem;
     font-weight: 700;
@@ -416,6 +424,7 @@ button, .btn-primary, .btn-save, .goal-btn, .calc-btn {
     padding: 1rem 2rem;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 1rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -427,6 +436,14 @@ button, .btn-primary, .btn-save, .goal-btn, .calc-btn {
     color: var(--text-primary);
     font-size: 1.5rem;
     cursor: pointer;
+}
+
+.header-version {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    opacity: 0.7;
+    margin-left: auto;
 }
 
 .header-brand {

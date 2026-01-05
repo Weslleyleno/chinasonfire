@@ -47,3 +47,6 @@ Se der erro, me envie a mensagem de erro que apareceu.
 
 O arquivo `CRIAR_TABELAS_SUPABASE.sql` está na mesma pasta do seu site, pronto para copiar e colar!
 
+
+
+

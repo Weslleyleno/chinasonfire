@@ -303,3 +303,6 @@ async function importToSupabase(dadosExportados) {
 - ✅ Tabelas foram criadas
 - ✅ Você está logado no Supabase
 
+
+
+

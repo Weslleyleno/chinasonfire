@@ -179,3 +179,6 @@ Se algo der errado:
 
 **Recomendação:** Use GitHub + Vercel para ter atualizações automáticas! 🚀
 
+
+
+
