@@ -1,7 +1,7 @@
 // ============================================
 // VARIABLES
 // ============================================
-const APP_VERSION = '1.0.0.2'; // Versão do aplicativo
+const APP_VERSION = '1.0.0.3'; // Versão do aplicativo
 let menuToggle, sidebar;
 let navItems = [];
 let contentSections = [];
