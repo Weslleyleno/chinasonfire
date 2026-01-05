@@ -2011,23 +2011,7 @@ input[type="number"] {
         padding: 1rem;
     }
 
-    /* Overlay quando sidebar está aberto no mobile */
-    .sidebar-overlay {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
-        z-index: 998;
-        pointer-events: auto;
-    }
-    
-    .sidebar.open ~ .sidebar-overlay,
-    body.sidebar-open .sidebar-overlay {
-        display: block;
-    }
+    /* Overlay removido - estava causando tela preta */
 
     .toggle-sidebar-btn {
         position: fixed;
@@ -2051,7 +2035,7 @@ input[type="number"] {
         position: fixed;
         left: 1rem;
         top: 1rem;
-        z-index: 1001;
+        z-index: 1000;
         background: var(--dark-card);
         border: 1px solid rgba(139, 92, 246, 0.3);
         padding: 0.75rem;
@@ -2061,6 +2045,8 @@ input[type="number"] {
 
     .header {
         padding-left: 3.5rem;
+        position: relative;
+        z-index: 1;
     }
 
     .summary-cards {

@@ -1,7 +1,7 @@
 // ============================================
 // VARIABLES
 // ============================================
-const APP_VERSION = '1.0.0.0'; // Versão do aplicativo
+const APP_VERSION = '1.0.0.2'; // Versão do aplicativo
 let menuToggle, sidebar;
 let navItems = [];
 let contentSections = [];
@@ -58,6 +58,11 @@ function updateGreeting() {
 // NAVIGATION
 // ============================================
 function showSection(sectionId) {
+    // Fechar sidebar no mobile ao trocar de seção (evitar tela preta)
+    if (window.innerWidth <= 768 && sidebar) {
+        sidebar.classList.remove('open');
+    }
+    
     contentSections.forEach(section => section.classList.remove('active'));
     const targetSection = document.getElementById(sectionId);
     if (targetSection) {
@@ -85,7 +90,7 @@ function showSection(sectionId) {
             const totalInvestido = totalDepositos + totalRedepositos + despesasOperacionais;
             updateDashboardCards(lucroDiario, totalInvestido, todayAccounts.length);
             updateBestDay();
-            updateRanking();
+            updateRanking().catch(err => console.error('Erro ao atualizar ranking:', err));
         }
         if (sectionId === 'controle-diario') {
             updateAccountsList();
@@ -627,7 +632,7 @@ function initModals() {
             }
             
             monthlyGoalModal.classList.remove('active');
-            updateRanking();
+            updateRanking().catch(err => console.error('Erro ao atualizar ranking:', err));
             alert('Meta mensal salva com sucesso!');
         });
     }
@@ -765,9 +770,9 @@ function editAccount(accountId) {
     modal.classList.add('active');
 }
 
-function deleteAccount(accountId) {
+async function deleteAccount(accountId) {
     accounts = accounts.filter(acc => acc.id !== accountId);
-    saveUserData(); // Salvar após deletar
+    await saveUserData(); // Salvar após deletar
     calculateAllTotals();
     updateAccountsList();
     initDailyChart();
@@ -1619,6 +1624,67 @@ async function loadAccountsFromSupabase() {
     }
 }
 
+// Carregar TODAS as contas de TODOS os usuários do Supabase (para ranking global)
+async function loadAllAccountsFromSupabase() {
+    if (!window.supabaseClient) return {};
+    
+    try {
+        // Buscar todas as contas
+        const { data: accountsData, error: accountsError } = await window.supabaseClient
+            .from('accounts')
+            .select('*')
+            .order('date', { ascending: false });
+        
+        if (accountsError) {
+            console.error('Erro ao carregar todas as contas do Supabase:', accountsError);
+            return {};
+        }
+        
+        if (!accountsData || accountsData.length === 0) return {};
+        
+        // Buscar todos os user_ids únicos
+        const userIds = [...new Set(accountsData.map(a => a.user_id))];
+        
+        // Buscar usernames
+        const { data: usersData } = await window.supabaseClient
+            .from('users')
+            .select('id, username')
+            .in('id', userIds);
+        
+        // Criar mapa user_id -> username
+        const userMap = {};
+        if (usersData) {
+            usersData.forEach(u => {
+                userMap[u.id] = u.username;
+            });
+        }
+        
+        // Agrupar contas por username
+        const accountsByUser = {};
+        accountsData.forEach(account => {
+            const username = userMap[account.user_id];
+            if (!username) return;
+            
+            if (!accountsByUser[username]) {
+                accountsByUser[username] = [];
+            }
+            
+            accountsByUser[username].push({
+                deposito: account.deposito || 0,
+                redeposito: account.redeposito || 0,
+                saque: account.saque || 0,
+                bau: account.bau || 0,
+                date: account.date
+            });
+        });
+        
+        return accountsByUser;
+    } catch (error) {
+        console.error('Erro ao carregar todas as contas do Supabase:', error);
+        return {};
+    }
+}
+
 // Salvar proxies no Supabase
 async function saveProxiesToSupabase() {
     if (!currentUser || !window.supabaseClient) return;
@@ -1907,14 +1973,28 @@ async function savePlatformsToSupabase() {
     if (!window.supabaseClient) return;
     
     try {
-        // Buscar todas as plataformas existentes
+        // Buscar todas as plataformas existentes no Supabase
         const { data: existingPlatforms } = await window.supabaseClient
             .from('platforms')
             .select('id, name');
         
         const existingNames = existingPlatforms?.map(p => p.name) || [];
-        const newPlatforms = platforms.filter(p => !existingNames.includes(p.name));
+        const localNames = platforms.map(p => p.name);
         
+        // Deletar plataformas que não existem mais localmente
+        const platformsToDelete = existingPlatforms?.filter(p => !localNames.includes(p.name)) || [];
+        if (platformsToDelete.length > 0) {
+            for (const platform of platformsToDelete) {
+                await window.supabaseClient
+                    .from('platforms')
+                    .delete()
+                    .eq('id', platform.id);
+            }
+            console.log(`🗑️ ${platformsToDelete.length} plataforma(s) deletada(s) do Supabase`);
+        }
+        
+        // Inserir novas plataformas
+        const newPlatforms = platforms.filter(p => !existingNames.includes(p.name));
         if (newPlatforms.length > 0) {
             const userId = await getUserId(currentUser || 'weslleyleno60');
             
@@ -1929,6 +2009,7 @@ async function savePlatformsToSupabase() {
             await window.supabaseClient
                 .from('platforms')
                 .insert(platformsToInsert);
+            console.log(`➕ ${newPlatforms.length} plataforma(s) inserida(s) no Supabase`);
         }
         
         // Atualizar plataformas existentes
@@ -1949,6 +2030,26 @@ async function savePlatformsToSupabase() {
         console.log('✅ Plataformas sincronizadas com Supabase');
     } catch (error) {
         console.error('Erro ao salvar plataformas no Supabase:', error);
+    }
+}
+
+// Deletar plataforma do Supabase
+async function deletePlatformFromSupabase(platformName) {
+    if (!window.supabaseClient) return;
+    
+    try {
+        const { error } = await window.supabaseClient
+            .from('platforms')
+            .delete()
+            .eq('name', platformName);
+        
+        if (error) {
+            console.error('Erro ao deletar plataforma do Supabase:', error);
+        } else {
+            console.log('✅ Plataforma deletada do Supabase:', platformName);
+        }
+    } catch (error) {
+        console.error('Erro ao deletar plataforma do Supabase:', error);
     }
 }
 
@@ -2587,22 +2688,14 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             e.stopPropagation();
             sidebar.classList.toggle('open');
-            // Adicionar/remover overlay no mobile
-            if (window.innerWidth <= 768) {
-                if (sidebar.classList.contains('open')) {
-                    document.body.classList.add('sidebar-open');
-                } else {
-                    document.body.classList.remove('sidebar-open');
-                }
-            }
+            // Não adicionar classe sidebar-open - estava causando tela preta
         });
         
-        // Fechar menu ao clicar no overlay
+        // Fechar menu ao clicar fora
         document.addEventListener('click', (e) => {
             if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
                 if (!sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
                     sidebar.classList.remove('open');
-                    document.body.classList.remove('sidebar-open');
                 }
             }
         });
@@ -2718,7 +2811,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update ranking if ranking section is active
             const rankingSection = document.getElementById('ranking');
             if (rankingSection && rankingSection.classList.contains('active')) {
-                updateRanking();
+                updateRanking().catch(err => console.error('Erro ao atualizar ranking:', err));
             }
             
             // Limpa os campos
@@ -2782,7 +2875,7 @@ document.addEventListener('DOMContentLoaded', () => {
         filterYear.addEventListener('change', (e) => {
             e.stopPropagation();
             populateDayFilter();
-            updateRanking();
+            updateRanking().catch(err => console.error('Erro ao atualizar ranking:', err));
         });
     }
     
@@ -2790,13 +2883,13 @@ document.addEventListener('DOMContentLoaded', () => {
         filterMonth.addEventListener('change', (e) => {
             e.stopPropagation();
             populateDayFilter();
-            updateRanking();
+            updateRanking().catch(err => console.error('Erro ao atualizar ranking:', err));
         });
     }
     
     if (filterDay) {
         filterDay.addEventListener('change', () => {
-            updateRanking();
+            updateRanking().catch(err => console.error('Erro ao atualizar ranking:', err));
         });
     }
     
@@ -2810,7 +2903,7 @@ document.addEventListener('DOMContentLoaded', () => {
     startAutoRefresh();
     
     // Load and initialize Proxy section
-    loadProxies();
+    loadProxies().catch(err => console.error('Erro ao carregar proxies:', err));
     const addProxyBtn = document.getElementById('addProxyBtn');
     if (addProxyBtn) {
         addProxyBtn.addEventListener('click', (e) => {
@@ -2821,7 +2914,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Load and initialize PIX Keys section
-    loadPixKeys();
+    loadPixKeys().catch(err => console.error('Erro ao carregar chaves PIX:', err));
     const addPixKeyBtn = document.getElementById('addPixKeyBtn');
     if (addPixKeyBtn) {
         addPixKeyBtn.addEventListener('click', (e) => {
@@ -2832,13 +2925,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Load and initialize Expenses section
-    loadExpenses();
+    loadExpenses().catch(err => console.error('Erro ao carregar gastos:', err));
     const addExpenseBtn = document.getElementById('addExpenseBtn');
     if (addExpenseBtn) {
         addExpenseBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            addExpense();
+            addExpense().catch(err => console.error('Erro ao adicionar gasto:', err));
         });
     }
     
@@ -2977,7 +3070,7 @@ function stopAutoRefresh() {
     }
 }
 
-function refreshAllData() {
+async function refreshAllData() {
     // Verificar se o usuário está logado
     if (!currentUser) return;
     
@@ -2989,16 +3082,51 @@ function refreshAllData() {
     
     console.log('🔄 Atualizando dados automaticamente...');
     
-    // Recarregar dados do usuário
-    loadUserData().then(() => {
-        // Dados recarregados
-    });
+    // Recarregar dados do usuário (contas, proxies, pixkeys, expenses)
+    await loadUserData();
+    
+    // Recarregar plataformas do Supabase (sempre, pois é global)
+    if (window.supabaseClient) {
+        try {
+            const supabasePlatforms = await loadPlatformsFromSupabase();
+            if (supabasePlatforms.length > 0) {
+                platforms = supabasePlatforms;
+                localStorage.setItem('platforms', JSON.stringify(platforms));
+                updatePlatformsList();
+            }
+        } catch(e) {
+            console.error('Erro ao recarregar plataformas:', e);
+        }
+    }
+    
+    // Recarregar usuários do Supabase (para admin)
+    if (isAdmin && window.supabaseClient) {
+        try {
+            await loadUsers();
+            updateUsersList();
+        } catch(e) {
+            console.error('Erro ao recarregar usuários:', e);
+        }
+    }
+    
+    // Atualizar listas específicas baseado na seção ativa
+    switch(sectionId) {
+        case 'proxy':
+            updateProxyList();
+            break;
+        case 'chaves-pix':
+            updatePixKeysList();
+            break;
+        case 'gastos':
+            updateExpensesList();
+            break;
+        case 'controle-diario':
+            updateAccountsList();
+            break;
+    }
     
     // Atualizar ranking (sempre, pois pode ter mudanças de outros usuários)
-    updateRanking();
-    
-    // Atualizar plataformas (sempre, pois é global)
-    updatePlatformsList();
+    await updateRanking();
     
     // Atualizar seção específica se estiver visível
     switch(sectionId) {
@@ -3034,7 +3162,7 @@ function refreshAllData() {
             
         case 'ranking':
             // Ranking já foi atualizado acima, mas atualizar novamente para garantir
-            updateRanking();
+            updateRanking().catch(err => console.error('Erro ao atualizar ranking:', err));
             break;
             
         case 'plataformas':
@@ -3527,7 +3655,7 @@ function initProfile() {
             checkAdminStatus(); // Re-check admin status after saving
             alert('Perfil salvo com sucesso!');
             updateSidebarAvatar(); // Update sidebar avatar
-            updateRanking(); // Update ranking to show new avatar
+            updateRanking().catch(err => console.error('Erro ao atualizar ranking:', err)); // Update ranking to show new avatar
             console.log('✅ Perfil salvo:', profile);
         });
     }
@@ -3708,7 +3836,7 @@ function getFilteredAccounts() {
     return filtered;
 }
 
-function updateRanking(isSectionOpened = false) {
+async function updateRanking(isSectionOpened = false) {
     // Get filtered accounts for current user
     const filteredAccounts = getFilteredAccounts();
     
@@ -3810,29 +3938,56 @@ function updateRanking(isSectionOpened = false) {
     if (goalDailyRemaining) goalDailyRemaining.textContent = formatCurrency(dailyGoalRemainingValue);
     
     // ============================================
-    // RANKING DE TODOS OS USUÁRIOS
+    // RANKING DE TODOS OS USUÁRIOS (GLOBAL)
     // ============================================
-    // Coletar todos os usuários do sistema
-    const savedUsers = localStorage.getItem('systemUsers');
+    // Carregar TODOS os usuários do sistema
     let allUsers = [];
-    if (savedUsers) {
+    if (window.supabaseClient) {
         try {
-            allUsers = JSON.parse(savedUsers);
-        } catch(e) {}
+            const supabaseUsers = await loadUsersFromSupabase();
+            allUsers = supabaseUsers;
+            
+            // Adicionar admin se existir no perfil
+            const adminProfile = localStorage.getItem('userProfile');
+            if (adminProfile) {
+                try {
+                    const admin = JSON.parse(adminProfile);
+                    if (admin.username && !allUsers.find(u => u.username === admin.username)) {
+                        allUsers.push({
+                            id: null,
+                            username: admin.username,
+                            isAdmin: true,
+                            date: null
+                        });
+                    }
+                } catch(e) {}
+            }
+        } catch(e) {
+            // Fallback para localStorage
+            const savedUsers = localStorage.getItem('systemUsers');
+            if (savedUsers) {
+                try {
+                    allUsers = JSON.parse(savedUsers);
+                } catch(e) {}
+            }
+        }
+    } else {
+        const savedUsers = localStorage.getItem('systemUsers');
+        if (savedUsers) {
+            try {
+                allUsers = JSON.parse(savedUsers);
+            } catch(e) {}
+        }
     }
     
-    // Adicionar admin se existir
-    const adminProfile = localStorage.getItem('userProfile');
-    if (adminProfile) {
+    // Carregar TODAS as contas de TODOS os usuários do Supabase
+    let allAccountsByUser = {};
+    if (window.supabaseClient) {
         try {
-            const admin = JSON.parse(adminProfile);
-            if (admin.username === 'weslleyleno60' || !allUsers.find(u => u.username === admin.username)) {
-                allUsers.push({
-                    username: admin.username || 'weslleyleno60',
-                    isAdmin: true
-                });
-            }
-        } catch(e) {}
+            allAccountsByUser = await loadAllAccountsFromSupabase();
+        } catch(e) {
+            console.error('Erro ao carregar todas as contas do Supabase:', e);
+        }
     }
     
     // Coletar contas de todos os usuários
@@ -3871,13 +4026,24 @@ function updateRanking(isSectionOpened = false) {
     // Para cada usuário, calcular seu lucro
     allUsers.forEach(user => {
         const username = user.username;
-        const userAccountsKey = `userData_${username}_accounts`;
-        const userAccountsData = localStorage.getItem(userAccountsKey);
         
-        if (!userAccountsData) return;
+        // Tentar usar contas do Supabase primeiro, depois localStorage
+        let userAccounts = allAccountsByUser[username] || [];
+        
+        // Se não tiver no Supabase, tentar localStorage
+        if (userAccounts.length === 0) {
+            const userAccountsKey = `userData_${username}_accounts`;
+            const userAccountsData = localStorage.getItem(userAccountsKey);
+            if (userAccountsData) {
+                try {
+                    userAccounts = JSON.parse(userAccountsData);
+                } catch(e) {}
+            }
+        }
+        
+        if (userAccounts.length === 0) return;
         
         try {
-            const userAccounts = JSON.parse(userAccountsData);
             
             // Aplicar filtros de data
             let filteredUserAccounts = userAccounts;
@@ -4262,17 +4428,57 @@ function updateCalcDisplay() {
 // ============================================
 // PROXY MANAGEMENT
 // ============================================
-function loadProxies() {
-    const key = currentUser ? getUserDataKey('proxies') : 'proxies';
-    const saved = localStorage.getItem(key);
-    if (saved) {
+async function loadProxies() {
+    // Tentar carregar do Supabase primeiro
+    if (window.supabaseClient && currentUser) {
         try {
-            proxies = JSON.parse(saved);
-        } catch(e) {
-            proxies = [];
+            const supabaseProxies = await loadProxiesFromSupabase();
+            if (supabaseProxies.length > 0) {
+                proxies = supabaseProxies;
+                // Sincronizar com localStorage como cache
+                localStorage.setItem(getUserDataKey('proxies'), JSON.stringify(proxies));
+            } else {
+                // Se não tiver no Supabase, tentar localStorage
+                const key = getUserDataKey('proxies');
+                const saved = localStorage.getItem(key);
+                if (saved) {
+                    try {
+                        proxies = JSON.parse(saved);
+                    } catch(e) {
+                        proxies = [];
+                    }
+                } else {
+                    proxies = [];
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao carregar proxies do Supabase, usando localStorage:', error);
+            // Fallback para localStorage
+            const key = getUserDataKey('proxies');
+            const saved = localStorage.getItem(key);
+            if (saved) {
+                try {
+                    proxies = JSON.parse(saved);
+                } catch(e) {
+                    proxies = [];
+                }
+            } else {
+                proxies = [];
+            }
         }
     } else {
-        proxies = [];
+        // Se não tiver Supabase ou usuário, usar localStorage
+        const key = currentUser ? getUserDataKey('proxies') : 'proxies';
+        const saved = localStorage.getItem(key);
+        if (saved) {
+            try {
+                proxies = JSON.parse(saved);
+            } catch(e) {
+                proxies = [];
+            }
+        } else {
+            proxies = [];
+        }
     }
     updateProxyList();
 }
@@ -4315,7 +4521,7 @@ function updateProxyList() {
     `).join('');
 }
 
-function addProxy() {
+async function addProxy() {
     const proxyName = document.getElementById('proxyName');
     const proxyInput = document.getElementById('proxyInput');
     if (!proxyInput) return;
@@ -4356,7 +4562,7 @@ function addProxy() {
         }
     });
     
-    saveProxies();
+    await saveProxies();
     updateProxyList();
     
     if (proxyName) proxyName.value = '';
@@ -4367,10 +4573,10 @@ function addProxy() {
     }
 }
 
-function deleteProxy(index) {
+async function deleteProxy(index) {
     if (confirm('Tem certeza que deseja remover este proxy?')) {
         proxies.splice(index, 1);
-        saveProxies();
+        await saveProxies();
         updateProxyList();
     }
 }
@@ -4378,17 +4584,57 @@ function deleteProxy(index) {
 // ============================================
 // PIX KEYS MANAGEMENT
 // ============================================
-function loadPixKeys() {
-    const key = currentUser ? getUserDataKey('pixKeys') : 'pixKeys';
-    const saved = localStorage.getItem(key);
-    if (saved) {
+async function loadPixKeys() {
+    // Tentar carregar do Supabase primeiro
+    if (window.supabaseClient && currentUser) {
         try {
-            pixKeys = JSON.parse(saved);
-        } catch(e) {
-            pixKeys = [];
+            const supabasePixKeys = await loadPixKeysFromSupabase();
+            if (supabasePixKeys.length > 0) {
+                pixKeys = supabasePixKeys;
+                // Sincronizar com localStorage como cache
+                localStorage.setItem(getUserDataKey('pixKeys'), JSON.stringify(pixKeys));
+            } else {
+                // Se não tiver no Supabase, tentar localStorage
+                const key = getUserDataKey('pixKeys');
+                const saved = localStorage.getItem(key);
+                if (saved) {
+                    try {
+                        pixKeys = JSON.parse(saved);
+                    } catch(e) {
+                        pixKeys = [];
+                    }
+                } else {
+                    pixKeys = [];
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao carregar chaves PIX do Supabase, usando localStorage:', error);
+            // Fallback para localStorage
+            const key = getUserDataKey('pixKeys');
+            const saved = localStorage.getItem(key);
+            if (saved) {
+                try {
+                    pixKeys = JSON.parse(saved);
+                } catch(e) {
+                    pixKeys = [];
+                }
+            } else {
+                pixKeys = [];
+            }
         }
     } else {
-        pixKeys = [];
+        // Se não tiver Supabase ou usuário, usar localStorage
+        const key = currentUser ? getUserDataKey('pixKeys') : 'pixKeys';
+        const saved = localStorage.getItem(key);
+        if (saved) {
+            try {
+                pixKeys = JSON.parse(saved);
+            } catch(e) {
+                pixKeys = [];
+            }
+        } else {
+            pixKeys = [];
+        }
     }
     updatePixKeysList();
 }
@@ -4440,7 +4686,7 @@ function updatePixKeysList() {
     `).join('');
 }
 
-function addPixKey() {
+async function addPixKey() {
     const pixKeyType = document.getElementById('pixKeyType');
     const pixKeyInput = document.getElementById('pixKeyInput');
     const pixOwnerName = document.getElementById('pixOwnerName');
@@ -4467,17 +4713,17 @@ function addPixKey() {
         date: new Date().toISOString()
     });
     
-    savePixKeys();
+    await savePixKeys();
     updatePixKeysList();
     pixKeyInput.value = '';
     if (pixOwnerName) pixOwnerName.value = '';
     if (pixBankName) pixBankName.value = '';
 }
 
-function deletePixKey(index) {
+async function deletePixKey(index) {
     if (confirm('Tem certeza que deseja remover esta chave PIX?')) {
         pixKeys.splice(index, 1);
-        savePixKeys();
+        await savePixKeys();
         updatePixKeysList();
     }
 }
@@ -4485,17 +4731,57 @@ function deletePixKey(index) {
 // ============================================
 // EXPENSES MANAGEMENT
 // ============================================
-function loadExpenses() {
-    const key = currentUser ? getUserDataKey('expenses') : 'expenses';
-    const saved = localStorage.getItem(key);
-    if (saved) {
+async function loadExpenses() {
+    // Tentar carregar do Supabase primeiro
+    if (window.supabaseClient && currentUser) {
         try {
-            expenses = JSON.parse(saved);
-        } catch(e) {
-            expenses = [];
+            const supabaseExpenses = await loadExpensesFromSupabase();
+            if (supabaseExpenses.length > 0) {
+                expenses = supabaseExpenses;
+                // Sincronizar com localStorage como cache
+                localStorage.setItem(getUserDataKey('expenses'), JSON.stringify(expenses));
+            } else {
+                // Se não tiver no Supabase, tentar localStorage
+                const key = getUserDataKey('expenses');
+                const saved = localStorage.getItem(key);
+                if (saved) {
+                    try {
+                        expenses = JSON.parse(saved);
+                    } catch(e) {
+                        expenses = [];
+                    }
+                } else {
+                    expenses = [];
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao carregar gastos do Supabase, usando localStorage:', error);
+            // Fallback para localStorage
+            const key = getUserDataKey('expenses');
+            const saved = localStorage.getItem(key);
+            if (saved) {
+                try {
+                    expenses = JSON.parse(saved);
+                } catch(e) {
+                    expenses = [];
+                }
+            } else {
+                expenses = [];
+            }
         }
     } else {
-        expenses = [];
+        // Se não tiver Supabase ou usuário, usar localStorage
+        const key = currentUser ? getUserDataKey('expenses') : 'expenses';
+        const saved = localStorage.getItem(key);
+        if (saved) {
+            try {
+                expenses = JSON.parse(saved);
+            } catch(e) {
+                expenses = [];
+            }
+        } else {
+            expenses = [];
+        }
     }
     updateExpensesList();
 }
@@ -4553,7 +4839,7 @@ function updateExpensesList() {
     `;
 }
 
-function addExpense() {
+async function addExpense() {
     const expenseDescription = document.getElementById('expenseDescription');
     const expenseValue = document.getElementById('expenseValue');
     const expenseDate = document.getElementById('expenseDate');
@@ -4582,17 +4868,17 @@ function addExpense() {
         createdAt: new Date().toISOString()
     });
     
-    saveExpenses();
+    await saveExpenses();
     updateExpensesList();
     expenseDescription.value = '';
     expenseValue.value = '';
     expenseDate.value = '';
 }
 
-function deleteExpense(index) {
+async function deleteExpense(index) {
     if (confirm('Tem certeza que deseja remover este gasto?')) {
         expenses.splice(index, 1);
-        saveExpenses();
+        await saveExpenses();
         updateExpensesList();
     }
 }
@@ -4784,9 +5070,16 @@ function editPlatform(index) {
     }
 }
 
-function deletePlatform(index) {
+async function deletePlatform(index) {
     if (confirm('Tem certeza que deseja remover esta plataforma?')) {
+        const platformName = platforms[index].name;
         platforms.splice(index, 1);
+        
+        // Deletar do Supabase
+        if (window.supabaseClient) {
+            await deletePlatformFromSupabase(platformName);
+        }
+        
         savePlatforms();
         updatePlatformsList();
     }
@@ -4795,7 +5088,7 @@ function deletePlatform(index) {
 // ============================================
 // ADMIN MANAGEMENT
 // ============================================
-function checkAdminStatus() {
+async function checkAdminStatus() {
     if (!currentUser) {
         isAdmin = false;
         const adminNavItem = document.getElementById('adminNavItem');
@@ -4810,18 +5103,46 @@ function checkAdminStatus() {
     if (currentUser === 'weslleyleno60') {
         isAdmin = true;
     } else {
-        // Verificar se está na lista de usuários e é admin
-        const savedUsers = localStorage.getItem('systemUsers');
-        if (savedUsers) {
+        // Verificar no Supabase primeiro
+        if (window.supabaseClient) {
             try {
-                const allUsers = JSON.parse(savedUsers);
-                const user = allUsers.find(u => u.username === currentUser);
+                const supabaseUsers = await loadUsersFromSupabase();
+                const user = supabaseUsers.find(u => u.username === currentUser);
                 isAdmin = user ? (user.isAdmin === true) : false;
+                
+                // Sincronizar com localStorage
+                if (supabaseUsers.length > 0) {
+                    localStorage.setItem('systemUsers', JSON.stringify(supabaseUsers));
+                }
             } catch(e) {
-                isAdmin = false;
+                // Fallback para localStorage
+                const savedUsers = localStorage.getItem('systemUsers');
+                if (savedUsers) {
+                    try {
+                        const allUsers = JSON.parse(savedUsers);
+                        const user = allUsers.find(u => u.username === currentUser);
+                        isAdmin = user ? (user.isAdmin === true) : false;
+                    } catch(e2) {
+                        isAdmin = false;
+                    }
+                } else {
+                    isAdmin = false;
+                }
             }
         } else {
-            isAdmin = false;
+            // Se Supabase não disponível, usar localStorage
+            const savedUsers = localStorage.getItem('systemUsers');
+            if (savedUsers) {
+                try {
+                    const allUsers = JSON.parse(savedUsers);
+                    const user = allUsers.find(u => u.username === currentUser);
+                    isAdmin = user ? (user.isAdmin === true) : false;
+                } catch(e) {
+                    isAdmin = false;
+                }
+            } else {
+                isAdmin = false;
+            }
         }
     }
     
@@ -4888,20 +5209,23 @@ async function loadUsers() {
         try {
             const supabaseUsers = await loadUsersFromSupabase();
             if (supabaseUsers.length > 0) {
-                // Filtrar apenas usuários não-admin
-                users = supabaseUsers.filter(u => !u.isAdmin);
-                // Sincronizar com localStorage como cache
+                // Sincronizar TODOS os usuários no localStorage (incluindo admins)
                 localStorage.setItem('systemUsers', JSON.stringify(supabaseUsers));
+                // Filtrar apenas usuários não-admin para a lista (admin não aparece na lista)
+                users = supabaseUsers.filter(u => !u.isAdmin);
             } else {
                 // Se não tiver no Supabase, tentar localStorage
                 const saved = localStorage.getItem('systemUsers');
                 if (saved) {
                     try {
                         const allUsers = JSON.parse(saved);
+                        // Filtrar apenas usuários não-admin para a lista
                         users = allUsers.filter(u => !u.isAdmin);
                     } catch(e) {
                         users = [];
                     }
+                } else {
+                    users = [];
                 }
             }
         } catch (error) {
@@ -4910,10 +5234,13 @@ async function loadUsers() {
             if (saved) {
                 try {
                     const allUsers = JSON.parse(saved);
+                    // Filtrar apenas usuários não-admin para a lista
                     users = allUsers.filter(u => !u.isAdmin);
                 } catch(e) {
                     users = [];
                 }
+            } else {
+                users = [];
             }
         }
     } else {
@@ -4922,10 +5249,13 @@ async function loadUsers() {
         if (saved) {
             try {
                 const allUsers = JSON.parse(saved);
+                // Filtrar apenas usuários não-admin para a lista
                 users = allUsers.filter(u => !u.isAdmin);
             } catch(e) {
                 users = [];
             }
+        } else {
+            users = [];
         }
     }
     updateUsersList();
