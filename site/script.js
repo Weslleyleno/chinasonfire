@@ -1967,13 +1967,38 @@ async function loadPlatformsFromSupabase() {
             return [];
         }
         
-        if (data) {
+        if (data && data.length > 0) {
+            // Buscar todos os user_ids únicos
+            const userIds = new Set();
+            data.forEach(p => {
+                if (p.created_by) userIds.add(p.created_by);
+                if (p.updated_by) userIds.add(p.updated_by);
+            });
+            
+            // Buscar usernames
+            let userMap = {};
+            if (userIds.size > 0) {
+                const { data: usersData } = await window.supabaseClient
+                    .from('users')
+                    .select('id, username')
+                    .in('id', Array.from(userIds));
+                
+                if (usersData) {
+                    usersData.forEach(u => {
+                        userMap[u.id] = u.username;
+                    });
+                }
+            }
+            
             return data.map(platform => ({
                 name: platform.name,
                 status: platform.status,
                 description: platform.description || '',
                 createdAt: platform.created_at,
-                updatedAt: platform.updated_at
+                updatedAt: platform.updated_at,
+                createdBy: userMap[platform.created_by] || 'Usuário',
+                updatedBy: platform.updated_by ? (userMap[platform.updated_by] || 'Usuário') : null,
+                date: platform.created_at
             }));
         }
         
@@ -2825,7 +2850,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Check admin status and initialize admin section
     checkAdminStatus();
-    loadUsers();
+    loadUsers().catch(err => console.error('Erro ao carregar usuários:', err));
     
     // Admin section - toggle public registration
     const enablePublicRegistration = document.getElementById('enablePublicRegistration');
@@ -3030,7 +3055,7 @@ function refreshAllData() {
             
         case 'admin':
             if (isAdmin) {
-                loadUsers();
+                loadUsers().catch(err => console.error('Erro ao carregar usuários:', err));
             }
             break;
     }
@@ -4826,13 +4851,81 @@ function getAdminUsers() {
     return [];
 }
 
-function loadUsers() {
-    const saved = localStorage.getItem('systemUsers');
-    if (saved) {
+// Carregar usuários do Supabase
+async function loadUsersFromSupabase() {
+    if (!window.supabaseClient) return [];
+    
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('users')
+            .select('id, username, is_admin, created_at')
+            .order('created_at', { ascending: false });
+        
+        if (error) {
+            console.error('Erro ao carregar usuários do Supabase:', error);
+            return [];
+        }
+        
+        if (data) {
+            return data.map(user => ({
+                id: user.id,
+                username: user.username,
+                isAdmin: user.is_admin || false,
+                date: user.created_at
+            }));
+        }
+        
+        return [];
+    } catch (error) {
+        console.error('Erro ao carregar usuários do Supabase:', error);
+        return [];
+    }
+}
+
+async function loadUsers() {
+    // Tentar carregar do Supabase primeiro
+    if (window.supabaseClient) {
         try {
-            users = JSON.parse(saved);
-        } catch(e) {
-            users = [];
+            const supabaseUsers = await loadUsersFromSupabase();
+            if (supabaseUsers.length > 0) {
+                // Filtrar apenas usuários não-admin
+                users = supabaseUsers.filter(u => !u.isAdmin);
+                // Sincronizar com localStorage como cache
+                localStorage.setItem('systemUsers', JSON.stringify(supabaseUsers));
+            } else {
+                // Se não tiver no Supabase, tentar localStorage
+                const saved = localStorage.getItem('systemUsers');
+                if (saved) {
+                    try {
+                        const allUsers = JSON.parse(saved);
+                        users = allUsers.filter(u => !u.isAdmin);
+                    } catch(e) {
+                        users = [];
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao carregar usuários do Supabase, usando localStorage:', error);
+            const saved = localStorage.getItem('systemUsers');
+            if (saved) {
+                try {
+                    const allUsers = JSON.parse(saved);
+                    users = allUsers.filter(u => !u.isAdmin);
+                } catch(e) {
+                    users = [];
+                }
+            }
+        }
+    } else {
+        // Se Supabase não estiver disponível, usar localStorage
+        const saved = localStorage.getItem('systemUsers');
+        if (saved) {
+            try {
+                const allUsers = JSON.parse(saved);
+                users = allUsers.filter(u => !u.isAdmin);
+            } catch(e) {
+                users = [];
+            }
         }
     }
     updateUsersList();
