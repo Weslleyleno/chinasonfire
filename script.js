@@ -1079,6 +1079,16 @@ function registerPublicUser() {
     users.push(newUser);
     localStorage.setItem('systemUsers', JSON.stringify(users));
     
+    // Sincronizar com Supabase
+    if (window.supabaseClient) {
+        try {
+            await createOrUpdateUserInSupabase(username, password, false);
+            console.log('✅ Usuário sincronizado com Supabase');
+        } catch (error) {
+            console.error('Erro ao sincronizar usuário com Supabase:', error);
+        }
+    }
+    
     // Limpar campos
     registerUsername.value = '';
     registerPassword.value = '';
@@ -1099,7 +1109,7 @@ function registerPublicUser() {
     }
 }
 
-function login() {
+async function login() {
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
     const loginError = document.getElementById('loginError');
@@ -1112,7 +1122,44 @@ function login() {
         return;
     }
     
-    // PRIMEIRO: Verificar na lista de usuários cadastrados (usuários criados pelo admin)
+    // PRIMEIRO: Verificar no Supabase (servidor)
+    if (window.supabaseClient) {
+        const supabaseUser = await verifyUserInSupabase(username, password);
+        if (supabaseUser) {
+            // Login bem-sucedido via Supabase
+            currentUser = supabaseUser.username;
+            localStorage.setItem('currentUser', currentUser);
+            
+            // Sincronizar usuário no localStorage para cache
+            await createOrUpdateUserInSupabase(username, password, supabaseUser.isAdmin);
+            
+            // Salvar credenciais se "Lembrar-me" estiver marcado
+            const rememberMe = document.getElementById('rememberMe');
+            if (rememberMe && rememberMe.checked) {
+                localStorage.setItem('savedCredentials', JSON.stringify({
+                    username: username,
+                    password: password,
+                    remember: true
+                }));
+            } else {
+                localStorage.removeItem('savedCredentials');
+            }
+            
+            if (loginError) loginError.style.display = 'none';
+            showDashboard();
+            loadUserData().then(() => {
+                checkAdminStatus();
+                updateSidebarAvatar();
+                updateGreeting();
+                initProfile();
+                loadOperationalExpenses();
+                startAutoRefresh();
+            });
+            return;
+        }
+    }
+    
+    // SEGUNDO: Verificar na lista de usuários cadastrados (localStorage - fallback)
     const savedUsers = localStorage.getItem('systemUsers');
     let allUsers = [];
     if (savedUsers) {
@@ -1131,9 +1178,14 @@ function login() {
     });
     
     if (user) {
-        // Login bem-sucedido - usuário cadastrado pelo admin
+        // Login bem-sucedido - usuário cadastrado pelo admin (localStorage)
         currentUser = user.username;
         localStorage.setItem('currentUser', currentUser);
+        
+        // Sincronizar com Supabase
+        if (window.supabaseClient) {
+            await createOrUpdateUserInSupabase(username, password, false);
+        }
         
         // Salvar credenciais se "Lembrar-me" estiver marcado
         const rememberMe = document.getElementById('rememberMe');
@@ -1144,23 +1196,21 @@ function login() {
                 remember: true
             }));
         } else {
-            // Remover credenciais salvas se não quiser lembrar
             localStorage.removeItem('savedCredentials');
         }
         
         if (loginError) loginError.style.display = 'none';
         showDashboard();
         loadUserData().then(() => {
-            checkAdminStatus(); // Verificar status de admin após login
-            // Refresh do perfil após login
-            updateSidebarAvatar(); // Atualizar avatar e nome no sidebar
-            updateGreeting(); // Atualizar saudação com nome correto
-            initProfile(); // Recarregar perfil do usuário logado
+            checkAdminStatus();
+            updateSidebarAvatar();
+            updateGreeting();
+            initProfile();
         });
         return;
     }
     
-    // SEGUNDO: Verificar login no perfil admin (apenas se não encontrou na lista de usuários)
+    // TERCEIRO: Verificar login no perfil admin (localStorage - fallback)
     let savedProfile = localStorage.getItem('userProfile');
     let profile = null;
     
@@ -1191,6 +1241,11 @@ function login() {
             currentUser = profile.username;
             localStorage.setItem('currentUser', currentUser);
             
+            // Sincronizar com Supabase
+            if (window.supabaseClient) {
+                await createOrUpdateUserInSupabase(username, password, true);
+            }
+            
             // Salvar credenciais se "Lembrar-me" estiver marcado
             const rememberMe = document.getElementById('rememberMe');
             if (rememberMe && rememberMe.checked) {
@@ -1200,28 +1255,23 @@ function login() {
                     remember: true
                 }));
             } else {
-                // Remover credenciais salvas se não quiser lembrar
                 localStorage.removeItem('savedCredentials');
             }
             
-        if (loginError) loginError.style.display = 'none';
-        showDashboard();
-        loadUserData().then(() => {
-            checkAdminStatus(); // Verificar status de admin após login
-            // Carregar despesas operacionais após login
-            loadOperationalExpenses();
-        });
-        
-        // Iniciar atualização automática após login
-        startAutoRefresh();
-        
-        // Refresh do perfil após login com pequeno delay para garantir que tudo foi carregado
-        setTimeout(() => {
-            updateSidebarAvatar(); // Atualizar avatar e nome no sidebar
-            updateGreeting(); // Atualizar saudação com nome correto
-            initProfile(); // Recarregar perfil do usuário logado
-        }, 100);
-        return;
+            if (loginError) loginError.style.display = 'none';
+            showDashboard();
+            loadUserData().then(() => {
+                checkAdminStatus();
+                loadOperationalExpenses();
+                startAutoRefresh();
+            });
+            
+            setTimeout(() => {
+                updateSidebarAvatar();
+                updateGreeting();
+                initProfile();
+            }, 100);
+            return;
         }
     }
     
@@ -1267,6 +1317,97 @@ function getUserDataKey(key) {
 
 // Cache de user IDs para evitar múltiplas consultas
 let userIdCache = {};
+
+// Verificar usuário no Supabase (para login)
+async function verifyUserInSupabase(username, password) {
+    if (!window.supabaseClient) {
+        return null;
+    }
+    
+    try {
+        // Buscar usuário no Supabase
+        const { data: user, error } = await window.supabaseClient
+            .from('users')
+            .select('id, username, password_hash, is_admin')
+            .eq('username', username)
+            .single();
+        
+        if (error || !user) {
+            return null;
+        }
+        
+        // Verificar senha (comparação simples por enquanto - em produção usar hash)
+        // Se password_hash estiver vazio, aceitar qualquer senha (migração)
+        if (!user.password_hash || user.password_hash === '' || user.password_hash === password) {
+            return {
+                id: user.id,
+                username: user.username,
+                isAdmin: user.is_admin || false
+            };
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Erro ao verificar usuário no Supabase:', error);
+        return null;
+    }
+}
+
+// Criar ou atualizar usuário no Supabase
+async function createOrUpdateUserInSupabase(username, password, isAdmin = false) {
+    if (!window.supabaseClient) {
+        return null;
+    }
+    
+    try {
+        // Verificar se usuário já existe
+        const { data: existingUser, error: searchError } = await window.supabaseClient
+            .from('users')
+            .select('id')
+            .eq('username', username)
+            .single();
+        
+        if (existingUser && !searchError) {
+            // Atualizar usuário existente
+            const { data: updatedUser, error: updateError } = await window.supabaseClient
+                .from('users')
+                .update({
+                    password_hash: password, // Em produção, usar hash
+                    is_admin: isAdmin,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', existingUser.id)
+                .select('id')
+                .single();
+            
+            if (updatedUser && !updateError) {
+                userIdCache[username] = updatedUser.id;
+                return updatedUser.id;
+            }
+        } else {
+            // Criar novo usuário
+            const { data: newUser, error: createError } = await window.supabaseClient
+                .from('users')
+                .insert({
+                    username: username,
+                    password_hash: password, // Em produção, usar hash
+                    is_admin: isAdmin
+                })
+                .select('id')
+                .single();
+            
+            if (newUser && !createError) {
+                userIdCache[username] = newUser.id;
+                return newUser.id;
+            }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Erro ao criar/atualizar usuário no Supabase:', error);
+        return null;
+    }
+}
 
 // Obter ou criar user ID no Supabase
 async function getUserId(username) {
@@ -1521,17 +1662,29 @@ async function loadPixKeysFromSupabase() {
 
 // Salvar gastos no Supabase
 async function saveExpensesToSupabase() {
-    if (!currentUser || !window.supabaseClient) return;
+    if (!currentUser || !window.supabaseClient) {
+        console.warn('⚠️ Não é possível salvar gastos: currentUser ou supabaseClient não disponível');
+        return;
+    }
     
     const userId = await getUserId(currentUser);
-    if (!userId) return;
+    if (!userId) {
+        console.warn('⚠️ Não é possível salvar gastos: userId não encontrado');
+        return;
+    }
     
     try {
-        await window.supabaseClient
+        // Deletar gastos antigos do usuário
+        const { error: deleteError } = await window.supabaseClient
             .from('expenses')
             .delete()
             .eq('user_id', userId);
         
+        if (deleteError) {
+            console.error('Erro ao deletar gastos antigos:', deleteError);
+        }
+        
+        // Inserir novos gastos
         if (expenses.length > 0) {
             const expensesToInsert = expenses.map(exp => ({
                 user_id: userId,
@@ -1540,25 +1693,40 @@ async function saveExpensesToSupabase() {
                 date: exp.date
             }));
             
-            await window.supabaseClient
+            const { data, error: insertError } = await window.supabaseClient
                 .from('expenses')
                 .insert(expensesToInsert);
+            
+            if (insertError) {
+                console.error('Erro ao inserir gastos:', insertError);
+                throw insertError;
+            }
+            
+            console.log(`✅ ${expenses.length} gasto(s) sincronizado(s) com Supabase`);
+        } else {
+            console.log('✅ Nenhum gasto para sincronizar (lista vazia)');
         }
-        
-        console.log('✅ Gastos sincronizados com Supabase');
     } catch (error) {
-        console.error('Erro ao salvar gastos no Supabase:', error);
+        console.error('❌ Erro ao salvar gastos no Supabase:', error);
+        throw error;
     }
 }
 
 // Carregar gastos do Supabase
 async function loadExpensesFromSupabase() {
-    if (!currentUser || !window.supabaseClient) return [];
+    if (!currentUser || !window.supabaseClient) {
+        console.warn('⚠️ Não é possível carregar gastos: currentUser ou supabaseClient não disponível');
+        return [];
+    }
     
     const userId = await getUserId(currentUser);
-    if (!userId) return [];
+    if (!userId) {
+        console.warn('⚠️ Não é possível carregar gastos: userId não encontrado');
+        return [];
+    }
     
     try {
+        console.log('🔄 Carregando gastos do Supabase...');
         const { data, error } = await window.supabaseClient
             .from('expenses')
             .select('*')
@@ -1566,21 +1734,25 @@ async function loadExpensesFromSupabase() {
             .order('date', { ascending: false });
         
         if (error) {
-            console.error('Erro ao carregar gastos do Supabase:', error);
+            console.error('❌ Erro ao carregar gastos do Supabase:', error);
             return [];
         }
         
-        if (data) {
+        if (data && data.length > 0) {
+            console.log(`✅ ${data.length} gasto(s) carregado(s) do Supabase`);
             return data.map(exp => ({
+                id: exp.id || Date.now(),
                 description: exp.description || '',
                 value: exp.value || 0,
-                date: exp.date
+                date: exp.date,
+                createdAt: exp.created_at || new Date().toISOString()
             }));
         }
         
+        console.log('ℹ️ Nenhum gasto encontrado no Supabase');
         return [];
     } catch (error) {
-        console.error('Erro ao carregar gastos do Supabase:', error);
+        console.error('❌ Erro ao carregar gastos do Supabase:', error);
         return [];
     }
 }
@@ -1809,17 +1981,30 @@ function loadFromLocalStorage() {
 }
 
 async function loadUserData() {
-    if (!currentUser) return;
+    if (!currentUser) {
+        console.warn('⚠️ Não é possível carregar dados: usuário não logado');
+        return;
+    }
+    
+    console.log('🔄 Carregando dados do usuário:', currentUser);
     
     // Tentar carregar do Supabase primeiro
     if (window.supabaseClient) {
         try {
+            console.log('🔄 Carregando do Supabase...');
             const [supabaseAccounts, supabaseProxies, supabasePixKeys, supabaseExpenses] = await Promise.all([
                 loadAccountsFromSupabase(),
                 loadProxiesFromSupabase(),
                 loadPixKeysFromSupabase(),
                 loadExpensesFromSupabase()
             ]);
+            
+            console.log('📊 Dados carregados do Supabase:', {
+                accounts: supabaseAccounts.length,
+                proxies: supabaseProxies.length,
+                pixKeys: supabasePixKeys.length,
+                expenses: supabaseExpenses.length
+            });
             
             if (supabaseAccounts.length > 0) accounts = supabaseAccounts;
             if (supabaseProxies.length > 0) proxies = supabaseProxies;
@@ -1831,12 +2016,15 @@ async function loadUserData() {
             localStorage.setItem(getUserDataKey('proxies'), JSON.stringify(proxies));
             localStorage.setItem(getUserDataKey('pixKeys'), JSON.stringify(pixKeys));
             localStorage.setItem(getUserDataKey('expenses'), JSON.stringify(expenses));
+            
+            console.log('✅ Dados carregados e sincronizados com localStorage');
         } catch (error) {
-            console.error('Erro ao carregar do Supabase, usando localStorage:', error);
+            console.error('❌ Erro ao carregar do Supabase, usando localStorage:', error);
             // Fallback para localStorage
             loadFromLocalStorage();
         }
     } else {
+        console.warn('⚠️ Supabase não disponível, usando localStorage');
         // Se Supabase não estiver disponível, usar localStorage
         loadFromLocalStorage();
     }
@@ -1929,7 +2117,12 @@ async function loadUserData() {
 }
 
 async function saveUserData() {
-    if (!currentUser) return;
+    if (!currentUser) {
+        console.warn('⚠️ Não é possível salvar dados: usuário não logado');
+        return;
+    }
+    
+    console.log('🔄 Iniciando sincronização de dados...');
     
     // Salvar no localStorage primeiro (cache rápido)
     localStorage.setItem(getUserDataKey('accounts'), JSON.stringify(accounts));
@@ -1937,9 +2130,17 @@ async function saveUserData() {
     localStorage.setItem(getUserDataKey('pixKeys'), JSON.stringify(pixKeys));
     localStorage.setItem(getUserDataKey('expenses'), JSON.stringify(expenses));
     
+    console.log('✅ Dados salvos no localStorage:', {
+        accounts: accounts.length,
+        proxies: proxies.length,
+        pixKeys: pixKeys.length,
+        expenses: expenses.length
+    });
+    
     // Sincronizar com Supabase (em background)
     if (window.supabaseClient) {
         try {
+            console.log('🔄 Sincronizando com Supabase...');
             await Promise.all([
                 saveAccountsToSupabase(),
                 saveProxiesToSupabase(),
@@ -1947,19 +2148,76 @@ async function saveUserData() {
                 saveExpensesToSupabase(),
                 saveOperationalExpensesToSupabase()
             ]);
+            console.log('✅ Todos os dados sincronizados com Supabase!');
         } catch (error) {
-            console.error('Erro ao sincronizar com Supabase:', error);
+            console.error('❌ Erro ao sincronizar com Supabase:', error);
         }
+    } else {
+        console.warn('⚠️ Supabase não está disponível');
     }
     
     // NÃO sobrescrever o perfil aqui - o perfil é salvo apenas quando o usuário clica em "Salvar Alterações"
     // Isso evita sobrescrever o avatar quando o usuário faz logout/login
 }
 
+// Migrar dados do localStorage para Supabase (executar uma vez)
+async function migrateLocalStorageToSupabase() {
+    if (!window.supabaseClient) return;
+    
+    // Verificar se já migrou
+    const migrationKey = 'dataMigratedToSupabase';
+    if (localStorage.getItem(migrationKey) === 'true') {
+        return; // Já migrou
+    }
+    
+    try {
+        console.log('🔄 Iniciando migração de dados para Supabase...');
+        
+        // Migrar usuários do sistema
+        const savedUsers = localStorage.getItem('systemUsers');
+        if (savedUsers) {
+            try {
+                const users = JSON.parse(savedUsers);
+                for (const user of users) {
+                    await createOrUpdateUserInSupabase(user.username, user.password, user.isAdmin || false);
+                }
+                console.log('✅ Usuários migrados');
+            } catch (e) {
+                console.error('Erro ao migrar usuários:', e);
+            }
+        }
+        
+        // Migrar admin
+        const savedProfile = localStorage.getItem('userProfile');
+        if (savedProfile) {
+            try {
+                const profile = JSON.parse(savedProfile);
+                if (profile.username && profile.password) {
+                    await createOrUpdateUserInSupabase(profile.username, profile.password, profile.isAdmin || false);
+                    console.log('✅ Admin migrado');
+                }
+            } catch (e) {
+                console.error('Erro ao migrar admin:', e);
+            }
+        }
+        
+        // Marcar como migrado
+        localStorage.setItem(migrationKey, 'true');
+        console.log('✅ Migração concluída!');
+    } catch (error) {
+        console.error('Erro na migração:', error);
+    }
+}
+
 // ============================================
 // INITIALIZATION
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
+    // Migrar dados para Supabase (se necessário)
+    if (window.supabaseClient) {
+        migrateLocalStorageToSupabase();
+    }
+    
     // Verificar login primeiro
     checkLogin();
     
@@ -4462,7 +4720,7 @@ function updateUsersList() {
     `;
 }
 
-function addUser() {
+async function addUser() {
     const newUsername = document.getElementById('newUsername');
     const newUserPassword = document.getElementById('newUserPassword');
     const newUserPasswordConfirm = document.getElementById('newUserPasswordConfirm');
@@ -4533,6 +4791,17 @@ function addUser() {
             users[userIndex].permissions = permissions;
             
             saveUsers();
+            
+            // Sincronizar com Supabase
+            if (window.supabaseClient) {
+                try {
+                    await createOrUpdateUserInSupabase(username, password, false);
+                    console.log('✅ Usuário atualizado no Supabase');
+                } catch (error) {
+                    console.error('Erro ao atualizar usuário no Supabase:', error);
+                }
+            }
+            
             updateUsersList();
             
             // Limpar campos e restaurar botão
@@ -4580,6 +4849,17 @@ function addUser() {
     });
     
     saveUsers();
+    
+    // Sincronizar com Supabase
+    if (window.supabaseClient) {
+        try {
+            await createOrUpdateUserInSupabase(username, password, false);
+            console.log('✅ Usuário sincronizado com Supabase');
+        } catch (error) {
+            console.error('Erro ao sincronizar usuário com Supabase:', error);
+        }
+    }
+    
     updateUsersList();
     newUsername.value = '';
     newUserPassword.value = '';

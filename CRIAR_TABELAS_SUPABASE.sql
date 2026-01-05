@@ -87,3 +87,6 @@ CREATE INDEX IF NOT EXISTS idx_pix_keys_user ON pix_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(user_id);
 CREATE INDEX IF NOT EXISTS idx_operational_expenses_user ON operational_expenses(user_id);
 
+
+
+

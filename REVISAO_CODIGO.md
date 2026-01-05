@@ -146,3 +146,6 @@ Todas as funcionalidades principais estão implementadas e funcionando. O códig
 
 **Próximo Passo:** Escolher uma opção de deploy (Supabase recomendado) e migrar os dados do localStorage para o banco de dados.
 
+
+
+

@@ -82,3 +82,6 @@ git checkout abc123
 
 **Dica:** Salve este arquivo para consultar depois! 📌
 
+
+
+

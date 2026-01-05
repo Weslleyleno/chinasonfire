@@ -149,3 +149,6 @@ async function loadAccounts() {
 
 **Pronto!** Seu site estará online em: `https://seu-projeto.web.app`
 
+
+
+
