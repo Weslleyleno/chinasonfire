@@ -1,0 +1,22 @@
+========================================
+COMANDO CORRETO PARA EXECUTAR
+========================================
+
+1. Primeiro, navegue para a pasta do projeto:
+
+cd C:\Users\AiNote\Desktop\site
+
+2. Depois, adicione o remote:
+
+git remote add origin https://github.com/weslleyleno/chinas-on-fire1.git
+
+3. Verifique se foi adicionado:
+
+git remote -v
+
+4. Envie para o GitHub:
+
+git branch -M main
+git push -u origin main
+
+========================================
